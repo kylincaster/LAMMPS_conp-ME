@@ -17,7 +17,7 @@ This project adds a new *pair_style* `lj/cut/point/long`, and two new *pppm* `co
 
 Any suggestions on the future features are welcome. Please cite our paper [[8]](#Ref.8) if using this **Conp/GA** code in your work.
 
-![Efficient](\misc\Efficient.png)
+![Efficient](./misc/Efficient.png)
 
 ​                                          Figure: The computation efficiency for **conp/GA**
 
@@ -244,7 +244,7 @@ Then, the removed elements are evenly partitioned into $2^{\mathrm{M}}$ blocks w
 
 To optimize the efficiency of PPCG, the value of `[p-cut]` should be adjusted to preserve the adequate number of elements. The rate of reservation is given as
 
-![rate](.\misc\rate.png)
+![rate](./misc/rate.png)
 
  Note that the case of `[block-num] = 0` for PPCG solver is similar to the case of PCG solver with the extra option of `pshift_scale 1.0`. Thus the default configuration of `pshift_scale` in PPCG is set to be `1.0`
 
@@ -286,7 +286,7 @@ fix			conp ele conp/GA 1 ppcg metal 1 1.0 debug 0 check on check_first 3 1e-12
 
 `INFO [on/off]` = Keyword allows to print comprehensive configuration information for **Conp/GA fix**. *Default*: **off**
 
-![](.\Fix_conp_Keywords.png)
+![](./Fix_conp_Keywords.png)
 
 
 
