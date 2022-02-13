@@ -1,0 +1,63 @@
+# eta eta
+units               real    
+dimension           3   
+newton              off 
+processors			* 1 1
+boundary            p p p
+atom_style          full 
+
+
+variable			boxL equal 100
+region				mybox block -${boxL} ${boxL} -${boxL} ${boxL} -${boxL} ${boxL}
+create_box			2 mybox
+
+#ariable			eta equal 0.25 # 0.257604657
+
+
+#air_style          lj/cut/coul/long 10.0 10.0
+#air_style          lj/cut/gauss/long 10.0 10.0 eta 1 ${eta1} 0.0 eta 2 ${eta2} 0.0
+pair_style			${Pstyle}
+
+
+pair_coeff			* * 0.0 0.0
+pair_modify			table ${Tablebits}
+
+
+mass				* 12
+
+
+create_atoms		1 single  0.000000 0.000000 0.000000 units box
+create_atoms		2 single  0.000000 0.000000 1 units box
+
+group a1 id			1
+group a2 id			2
+
+set group a1 		charge  +1
+set group a2 		charge 	-1
+dielectric			332.06371 # for real units
+
+kspace_style		${Kstyle}
+
+fix					1 a2 move linear 0 0 1 units box
+
+variable			z equal z[2]
+variable			fz1 equal fz[1]
+variable			fz2 equal fz[2]
+
+compute 			pair all pe/atom pair
+compute 			long all pe/atom kspace
+compute 			pe all pe/atom pair kspace
+
+
+variable			pair1 equal c_pair[1]
+variable			pair2 equal c_pair[2]
+variable			long1 equal c_long[1]
+variable			long2 equal c_long[2]
+variable			pe1 equal c_pe[1]
+variable			pe2 equal c_pe[2]
+
+variable			start equal 0
+thermo_style        custom v_start v_z v_fz1 v_fz2 v_pair1 v_pair2 v_long1 v_long2 v_pe1 v_pe2 ecoul elong pe 
+thermo              1
+thermo_modify 		format line "%.0f %.3f %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e"
+run					12

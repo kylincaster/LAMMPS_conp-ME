@@ -1,0 +1,132 @@
+# 27c2c1im-27ntf2
+units             real
+atom_style        full
+timestep          1.0
+boundary		  p p p
+processors		  * * 1
+
+variable		  CC equal 1.42
+variable		  one6 equal 1/6
+variable		  one3 equal 1/3
+variable		  one2 equal 1/2
+variable		  two3 equal 2/3
+variable		  CC_c equal 1/${CC}
+#ariable		  NX   equal 6
+#ariable          NY   equal 11
+variable		  FFF  equal 0
+#ariable		  tol  equal 1e-14
+variable		  tol_first  equal 0
+variable		  qS   equal 0.001
+variable	   	  num_ele equal ${NX}*${NY}
+#ariable		  multiRun_times equal 3
+variable		  conp_run equal 3
+variable		  runs equal ${conp_run}*3
+variable 		  multi_run equal ${runs}*${multiRun_times}
+
+lattice 		  custom ${CC} a1 3.0 0.0 0.0 a2 0.0 1.7320508075688772 0.0  &
+				  a3 0.0 0.0 ${CC_c} &
+                  basis 0.0 0.0 0.5 basis ${one6} 0.5 0.5 basis ${one2} 0.5 0.5 basis ${two3} 0.0 0.5
+
+variable          SLG_int equal 50
+region			  box  block 0 ${NX} 0 ${NY}  0 $(v_SLG_int+1)
+region			inbox  block 0 ${NX} 0 ${NY}  -$(v_SLG_int/2-2) $(v_SLG_int/2-3)
+
+create_box		  4 box
+
+region			  box0 block 0 ${NX} 0 ${NY}  0  1
+region			  box1 block 0 ${NX} 0 ${NY} $(v_SLG_int) $(v_SLG_int+1)
+create_atoms	  1 region box0
+create_atoms	  2 region box1
+
+
+variable		  lz equal lz
+variable		  lz equal ${lz}
+variable		  lz_half equal ${lz}/2
+change_box		  all z delta -${lz_half} -${lz_half} remap units box
+
+
+variable		  eta_GA equal 2.93295072600296 # for GA with r_1nn = 1.42
+pair_style		  lj/cut/point/long 10.0 10.0 point 1 ${eta_GA}  point 2 ${eta_GA}
+
+
+#air_style		  lj/cut/coul/long 10.0 9
+pair_modify       mix geometric tail yes
+#air_modify 	  table 0
+pair_coeff		  * * 0.0 0.0
+mass			  *   12
+
+
+#roup			  GA_lo region box0
+#roup			  GA_hi region box1
+group			  GA_lo type 1
+group			  GA_hi type 2
+neigh_modify 	  every 1 delay 0 check yes
+#ielectric		  332.06371 # for real units
+
+group			  SLG   type 1 2
+variable	      GA_qi equal  1
+
+kspace_style      pppm 1e-4
+kspace_modify	  mesh 8 8 15 gewald 0.225777
+#space_modify	  slab 3.0
+#isplace_atoms	  all move 0 0 -0.39843749999999 units box
+
+variable		  num equal count(all)
+variable		  GA_num equal ${num}
+
+
+variable		  pe equal pe/${GA_num}
+
+
+compute			  pe 	all   pe/atom_GA
+compute			  charge all property/atom q
+compute 		  q0 GA_lo reduce ave c_charge
+compute 		  q1 GA_hi reduce ave c_charge
+
+
+create_atoms	  3 random ${num_ele} 912319 inbox
+create_atoms	  4 random ${num_ele} 403191 inbox
+group             ME    type 3
+group             CLA   type 4
+group             ions  type 3 4
+set 			  group ME charge  +1
+set 			  group CLA charge -1
+# variable 		  prun equal ramp(${multi_run},0)%${runs}==0*ramp(${multi_run},0)%${}
+variable 		  prun equal abs(-ceil(ramp(0,-${multi_run})/${runs}))%${multiRun_times}
+
+variable          dd   equal 1e-1
+variable 		  dx   equal ${dd}*v_prun*173
+variable 		  dy   equal ${dd}*v_prun*121
+variable 		  dz   equal ${dd}*v_prun
+variable		  drtn equal -${dd}*${multi_run}/${runs}
+
+
+#ump 			  1 all atom 1 constU_validate.lammpstrj
+
+
+compute avesq_fz ions reduce avesq fz
+compute avesq_pe ions reduce avesq c_pe
+compute avesq_z  ions reduce avesq x
+compute ions_q2  ions reduce avesq c_charge
+compute GAlo_q2  GA_lo reduce avesq c_charge
+compute GAhi_q2  GA_hi reduce avesq c_charge
+
+set 			  group GA_lo charge  $(v_qS*v_GA_qi)
+set 			  group GA_hi charge -$(v_qS*v_GA_qi)
+variable		  pe_1 equal c_pe[1]
+
+fix				  conp all null_print
+thermo_style      custom v_FFF c_avesq_z c_avesq_pe c_avesq_fz c_q0 c_q1 c_ions_q2 c_GAlo_q2 c_GAhi_q2 f_conp v_prun
+thermo_modify 		format line "%.0f %.3f %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e"
+#un				  0
+unfix			  conp
+
+variable		  U_cap equal 1
+# ------------------------ Test the validate of mat save and force -----------------
+print "INFO: Test the matrix save/load with different number of nprocs and compatibility with ewald summation"
+fix				conp SLG conp/GA ${conp_run} inv metal 1 -${U_cap} metal 2 ${U_cap} tol 1e-12 max 100 tol_style max_Q printf_me -1 matrix ${mat_name} symmetry off neutrality off pair on bvec 1 units eV first off pcg_mat DC 0.1 1e-8 Uchem_extract off check_first ${tol_first} ${tol} check on debug 0 scalapack ${scalapack_num}
+#ix				conp SLG null_print
+thermo 			  1 # ${runs}
+run				  ${multi_run}
+
+
