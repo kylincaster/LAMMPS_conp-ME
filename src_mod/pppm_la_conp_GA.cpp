@@ -41,7 +41,7 @@ using namespace MathConst;
 enum { REVERSE_RHO };
 enum { FORWARD_IK, FORWARD_AD, FORWARD_IK_PERATOM, FORWARD_AD_PERATOM };
 
-PPPM_LA_conp_GA::PPPM_LA_conp_GA(LAMMPS *lmp) : PPPM_conp_GA(lmp), gw(NULL)
+PPPM_LA_conp_GA::PPPM_LA_conp_GA(LAMMPS* lmp) : PPPM_conp_GA(lmp), gw(NULL)
 {
   /*
   nxhi_conp = nxlo_conp = 0;
@@ -49,20 +49,20 @@ PPPM_LA_conp_GA::PPPM_LA_conp_GA(LAMMPS *lmp) : PPPM_conp_GA(lmp), gw(NULL)
   nzhi_conp = nzlo_conp = 0;
   nx_conp = ny_conp = nz_conp = nxyz_conp = 0;
   */
-  matrix_flag = true;
+  matrix_flag  = true;
   matrix_saved = false;
 }
 
 PPPM_LA_conp_GA::~PPPM_LA_conp_GA()
 {
-  ;    // printf("~PPPM_LA_conp_GA()");
+  ; // printf("~PPPM_LA_conp_GA()");
 }
 
-double **PPPM_LA_conp_GA::compute_AAA(double **matrix)
+double** PPPM_LA_conp_GA::compute_AAA(double** matrix)
 {
   // if(me == 0) printf("compute_AAA()\n");
   double t_begin = MPI_Wtime();
-  FFT_SCALAR *gw_store;
+  FFT_SCALAR* gw_store;
   /*
   if(matrix_saved == false) {
     gw_used = compute_intermediate_matrix(true);
@@ -70,17 +70,16 @@ double **PPPM_LA_conp_GA::compute_AAA(double **matrix)
     gw_used = gw;
   }
   */
-  if (me == 0 && screen)
-    fprintf(screen,
-            "[ConpGA] compute Ewald matrix from the Green's function "
-            "via {pppm_la_conp/GA}\n");
+  if (me == 0)
+    utils::logmesg(lmp, "[ConpGA] compute Ewald matrix from the Green's function "
+                        "via {pppm_la_conp/GA}\n");
   MPI_Barrier(world);
-  double fft_time = MPI_Wtime();
+  double fft_time  = MPI_Wtime();
   size_t nxyz_pppm = nz_pppm * ny_pppm * nx_pppm;
   int k_disp, j_disp;
-  FFT_SCALAR ***greens_real;
+  FFT_SCALAR*** greens_real;
   memory->create(greens_real, nz_pppm, ny_pppm, nx_pppm, "pppm:greens_real");
-  FFT_SCALAR *const greens_real_arr = &greens_real[0][0][0];
+  FFT_SCALAR* const greens_real_arr = &greens_real[0][0][0];
   memset(greens_real_arr, 0, nxyz_pppm * sizeof(FFT_SCALAR));
   memory->create(gw_store, nxyz_pppm, "pppm:gw_store");
   memset(gw_store, 0, 1 * nxyz_pppm * sizeof(FFT_SCALAR));
@@ -89,12 +88,12 @@ double **PPPM_LA_conp_GA::compute_AAA(double **matrix)
   // fft green's funciton k -> r
   for (int i = 0, n = 0; i < nfft; i++) {
     work2[n++] = greensfn[i];
-    work2[n++] = ZEROF;    // *= greensfn[i];
+    work2[n++] = ZEROF; // *= greensfn[i];
   }
   fft2->compute(work2, work2, -1);
   // printf("1x\n");
 
-  const double qscale = qqrd2e * scale;
+  const double qscale            = qqrd2e * scale;
   const FFT_SCALAR greens_factor = 0.5 / nxyz_pppm;
   for (int k = nzlo_in, n = 0; k <= nzhi_in; k++)
     for (int j = nylo_in; j <= nyhi_in; j++)
@@ -106,20 +105,20 @@ double **PPPM_LA_conp_GA::compute_AAA(double **matrix)
   MPI_Allreduce(MPI_IN_PLACE, greens_real_arr, nxyz_pppm, MPI_FFT_SCALAR, MPI_SUM, world);
   // printf("2x\n");
 
-  int nx_out = nxhi_out - nxlo_out + 1;    // nx_pppm + order + 1;
-  int ny_out = nyhi_out - nylo_out + 1;    // ny_pppm + order + 1;
-  int nz_out = nzhi_out - nzlo_out + 1;    // nz_pppm + order + 1;
-  int nxyz_out = nx_out * ny_out * nz_out;
-  int nxy_pppm = nx_pppm * ny_pppm;
-  FixConpGA *FIX = electro->FIX;
-  int localGA_num = FIX->localGA_num;
-  int totalGA_num = FIX->totalGA_num;
-  int *localGA_EachProc = &FIX->localGA_EachProc.front();
-  int *localGA_EachProc_Dipl = &FIX->localGA_EachProc_Dipl.front();
-  int order_Cb = order * order * order;
+  int nx_out                 = nxhi_out - nxlo_out + 1; // nx_pppm + order + 1;
+  int ny_out                 = nyhi_out - nylo_out + 1; // ny_pppm + order + 1;
+  int nz_out                 = nzhi_out - nzlo_out + 1; // nz_pppm + order + 1;
+  int nxyz_out               = nx_out * ny_out * nz_out;
+  int nxy_pppm               = nx_pppm * ny_pppm;
+  FixConpGA* FIX             = electro->FIX;
+  int localGA_num            = FIX->localGA_num;
+  int totalGA_num            = FIX->totalGA_num;
+  int* localGA_EachProc      = &FIX->localGA_EachProc.front();
+  int* localGA_EachProc_Dipl = &FIX->localGA_EachProc_Dipl.front();
+  int order_Cb               = order * order * order;
 
-  int *grid_pos;
-  FFT_SCALAR *rho_GA;
+  int* grid_pos;
+  FFT_SCALAR* rho_GA;
   memory->create(grid_pos, 3 * order_Cb, "pppm:grid_pos");
   memory->create(rho_GA, order_Cb, "pppm:rho_GA");
   // printf("3x\n");
@@ -144,8 +143,8 @@ double **PPPM_LA_conp_GA::compute_AAA(double **matrix)
   printf("nz: %d, %d, nz_pppm: %d\n", nzlo_out, nzhi_out, nz_pppm);
   */
 
-  int *GA2grid_all;
-  FFT_SCALAR **GA2rho_all;
+  int* GA2grid_all;
+  FFT_SCALAR** GA2rho_all;
   memory->create(GA2grid_all, totalGA_num * 3, "pppm:GA2rho_all");
 // TODO replace 6 by 3;
 #ifdef INTEL_MPI
@@ -157,73 +156,71 @@ double **PPPM_LA_conp_GA::compute_AAA(double **matrix)
   MPI_Datatype GA2grid_Type;
   MPI_Type_contiguous(3, MPI_INT, &GA2grid_Type);
   MPI_Type_commit(&GA2grid_Type);
-  MPI_Allgatherv(&GA2grid[0], localGA_EachProc[me], GA2grid_Type, &GA2grid_all[0], localGA_EachProc,
-                 localGA_EachProc_Dipl, GA2grid_Type, world);
+  MPI_Allgatherv(&GA2grid[0], localGA_EachProc[me], GA2grid_Type, &GA2grid_all[0], localGA_EachProc, localGA_EachProc_Dipl, GA2grid_Type, world);
   MPI_Type_free(&GA2grid_Type);
 
   MPI_Datatype GA2rho_Type;
   MPI_Type_contiguous(3 * order, MPI_DOUBLE, &GA2rho_Type);
   MPI_Type_commit(&GA2rho_Type);
-  MPI_Allgatherv(&GA2rho[0][nlower], localGA_EachProc[me], GA2rho_Type, &GA2rho_all[0][nlower],
-                 localGA_EachProc, localGA_EachProc_Dipl, GA2rho_Type, world);
+  MPI_Allgatherv(&GA2rho[0][nlower], localGA_EachProc[me], GA2rho_Type, &GA2rho_all[0][nlower], localGA_EachProc, localGA_EachProc_Dipl, GA2rho_Type, world);
   MPI_Type_free(&GA2rho_Type);
 
   // printf("4x\n");
 
-  char *occupied = NULL;
+  char* occupied = NULL;
   memory->create(occupied, nxyz_pppm, "pppm:occupied");
   memset(occupied, 0, nxyz_pppm * sizeof(bool));
   // printf("4.1x\n");
 
   for (int iGA = 0; iGA < localGA_num; ++iGA) {
-    int iGA3 = iGA * 3;
+    int iGA3   = iGA * 3;
     int iGA_nx = GA2grid[iGA3];
     int iGA_ny = GA2grid[iGA3 + 1];
-    int iGA_nz = GA2grid[iGA3 + 2];    // nix s
+    int iGA_nz = GA2grid[iGA3 + 2]; // nix s
     for (int ni = nlower; ni <= nupper; ni++) {
       int miz = (nz_pppm + ni + iGA_nz) % nz_pppm;
       for (int mi = nlower; mi <= nupper; mi++) {
         int miy = (ny_pppm + mi + iGA_ny) % ny_pppm;
         for (int li = nlower; li <= nupper; li++) {
-          int mix = (nx_pppm + li + iGA_nx) % nx_pppm;
+          int mix                                        = (nx_pppm + li + iGA_nx) % nx_pppm;
           occupied[miz * nxy_pppm + miy * nx_pppm + mix] = true;
-        }    // li
-      }      // mi
-    }        // ni
-  }          // iGA
+        } // li
+      }   // mi
+    }     // ni
+  }       // iGA
 
   MPI_Allreduce(MPI_IN_PLACE, occupied, nxyz_pppm, MPI_C_BOOL, MPI_LOR, world);
   int occupied_dots = 0;
   for (size_t i = 0; i < nxyz_pppm; ++i) {
     if (occupied[i]) occupied_dots++;
   }
-  if (me == 0 && screen) {
-    fprintf(screen, "[ConpGA] for the mesh points covered by GA atoms is %.2f%% for {%d/%ld}\n",
-            100 * double(occupied_dots) / nxyz_pppm, occupied_dots, nxyz_pppm);
+  if (me == 0) {
+    utils::logmesg(lmp, "[ConpGA] for the mesh points covered by GA atoms is {:.2f}%% for {{{}/{}}}\n", 100 * double(occupied_dots) / nxyz_pppm, occupied_dots,
+                   nxyz_pppm);
   }
   const double matrix_factor = qscale * nxyz_pppm / volume;
 
   for (int iGA = 0; iGA < localGA_num; iGA++) {
-    int iGA3 = iGA * 3;
-    int iGA_nx = GA2grid[iGA3];
-    int iGA_ny = GA2grid[iGA3 + 1];
-    int iGA_nz = GA2grid[iGA3 + 2];
-    FFT_SCALAR *ptr_x = GA2rho[iGA3 + 0];
-    FFT_SCALAR *ptr_y = GA2rho[iGA3 + 1];
-    FFT_SCALAR *ptr_z = GA2rho[iGA3 + 2];
+    int iGA3          = iGA * 3;
+    int iGA_nx        = GA2grid[iGA3];
+    int iGA_ny        = GA2grid[iGA3 + 1];
+    int iGA_nz        = GA2grid[iGA3 + 2];
+    FFT_SCALAR* ptr_x = GA2rho[iGA3 + 0];
+    FFT_SCALAR* ptr_y = GA2rho[iGA3 + 1];
+    FFT_SCALAR* ptr_z = GA2rho[iGA3 + 2];
 
-    int *grid_pos_ptr = grid_pos;
+    int* grid_pos_ptr = grid_pos;
     ;
     for (int ni = nlower, ii = 0; ni <= nupper; ni++) {
       FFT_SCALAR iz0 = ptr_z[ni];
-      int miz = ni + iGA_nz;
+      int miz        = ni + iGA_nz;
       for (int mi = nlower; mi <= nupper; mi++) {
         FFT_SCALAR iy0 = iz0 * ptr_y[mi];
-        int miy = mi + iGA_ny;
+        int miy        = mi + iGA_ny;
         for (int li = nlower; li <= nupper; li++) {
-          int mix = li + iGA_nx;
-          FFT_SCALAR ix0 = iy0 * ptr_x[li];
-          rho_GA[ii] = ix0;
+          int mix         = li + iGA_nx;
+          FFT_SCALAR ix0  = iy0 * ptr_x[li];
+          rho_GA[ii]      = ix0;
           grid_pos_ptr[0] = miz;
           grid_pos_ptr[1] = miy;
           grid_pos_ptr[2] = mix;
@@ -233,8 +230,8 @@ double **PPPM_LA_conp_GA::compute_AAA(double **matrix)
       }
     }
 
-    FFT_SCALAR *gw_ptr = gw_store;
-    char *oPtr = occupied;
+    FFT_SCALAR* gw_ptr = gw_store;
+    char* oPtr         = occupied;
     for (int mjz = 0; mjz < nz_pppm; mjz++) {
       for (int mjy = 0; mjy < ny_pppm; mjy++) {
         for (int mjx = 0; mjx < nx_pppm; mjx++) {
@@ -248,21 +245,21 @@ double **PPPM_LA_conp_GA::compute_AAA(double **matrix)
           FFT_SCALAR tmp = 0.0;
           for (int ni = nlower, ii = 0; ni <= nupper; ni++) {
             FFT_SCALAR iz0 = ptr_z[ni];
-            int miz = ni + iGA_nz;
+            int miz        = ni + iGA_nz;
             for (int mi = nlower; mi <= nupper; mi++) {
               FFT_SCALAR iy0 = iz0 * ptr_y[mi];
-              int miy = mi + iGA_ny;
+              int miy        = mi + iGA_ny;
               for (int li = nlower; li <= nupper; li++) {
-                int mix = li + iGA_nx;
+                int mix        = li + iGA_nx;
                 FFT_SCALAR ix0 = iy0 * ptr_x[li];
-                int mz = abs(mjz - miz) % nz_pppm;
-                int my = abs(mjy - miy) % ny_pppm;
-                int mx = abs(mjx - mix) % nx_pppm;
-                int ind = mz * nxy_pppm + my * nx_pppm + mx;
+                int mz         = abs(mjz - miz) % nz_pppm;
+                int my         = abs(mjy - miy) % ny_pppm;
+                int mx         = abs(mjx - mix) % nx_pppm;
+                int ind        = mz * nxy_pppm + my * nx_pppm + mx;
                 tmp += ix0 * greens_real_arr[ind];
               }
             }
-          }    // ni
+          } // ni
 
           /*
           double tmp = 0.0; int *grid_pos_ptr = grid_pos;
@@ -280,72 +277,71 @@ double **PPPM_LA_conp_GA::compute_AAA(double **matrix)
           oPtr++;
         }
       }
-    }    // mjz
+    } // mjz
 
     /* Print Progress */
-    if (me == 0 && iGA % 50 == 0 && screen) {
+    if (me == 0 && iGA % 50 == 0) {
       double dtime = MPI_Wtime() - t_begin;
-      fprintf(screen, "[ConpGA] progress = %2.2f%% for {%d/%d}, time elapsed: %8.2f[s]\n",
-              (double) (iGA + 1) / localGA_num * 100, iGA + 1, localGA_num, dtime);
+      utils::logmesg(lmp, "[ConpGA] progress = {:2.2f}%% for {{{}/{}}}, time elapsed: %8.2f[s]\n", (double)(iGA + 1) / localGA_num * 100, iGA + 1, localGA_num,
+                     dtime);
     }
 
     for (int jGA = 0; jGA < totalGA_num; jGA++) {
-      int jGA3 = jGA * 3;
-      int jGA_nx = GA2grid_all[jGA3];
-      int jGA_ny = GA2grid_all[jGA3 + 1];
-      int jGA_nz = GA2grid_all[jGA3 + 2];    // nix s
+      int jGA3       = jGA * 3;
+      int jGA_nx     = GA2grid_all[jGA3];
+      int jGA_ny     = GA2grid_all[jGA3 + 1];
+      int jGA_nz     = GA2grid_all[jGA3 + 2]; // nix s
       FFT_SCALAR aij = 0.;
 
       for (int ni = nlower; ni <= nupper; ni++) {
         FFT_SCALAR iz0 = GA2rho_all[jGA3 + 2][ni];
-        int mz = (nz_pppm + ni + jGA_nz) % nz_pppm;
+        int mz         = (nz_pppm + ni + jGA_nz) % nz_pppm;
         for (int mi = nlower; mi <= nupper; mi++) {
           FFT_SCALAR iy0 = iz0 * GA2rho_all[jGA3 + 1][mi];
-          int my = (ny_pppm + mi + jGA_ny) % ny_pppm;
+          int my         = (ny_pppm + mi + jGA_ny) % ny_pppm;
           for (int li = nlower; li <= nupper; li++) {
-            int mx = (nx_pppm + li + jGA_nx) % nx_pppm;
+            int mx         = (nx_pppm + li + jGA_nx) % nx_pppm;
             FFT_SCALAR ix0 = iy0 * GA2rho_all[jGA3][li];
-            int ind = mz * nxy_pppm + my * nx_pppm + mx;
+            int ind        = mz * nxy_pppm + my * nx_pppm + mx;
             aij += ix0 * gw_store[ind];
           }
         }
-      }    // ni
+      } // ni
       matrix[iGA][jGA] += aij * matrix_factor;
-    }    // jGA
-  }      // iGA;
+    } // jGA
+  }   // iGA;
   memory->destroy(occupied);
   const double diag_factor = qscale * g_ewald / MY_PIS;
-  const double bg_factor = qscale * MY_PI2 / (g_ewald * g_ewald * volume);
-  const double efact = qscale * MY_2PI / volume;
-  const double zprd = domain->prd[2];
-  const double efact_half = 0.5 * efact;
-  const double zprd_const = efact * zprd * zprd / 12.0 + bg_factor;    // qsum_group;
+  const double bg_factor   = qscale * MY_PI2 / (g_ewald * g_ewald * volume);
+  const double efact       = qscale * MY_2PI / volume;
+  const double zprd        = domain->prd[2];
+  const double efact_half  = 0.5 * efact;
+  const double zprd_const  = efact * zprd * zprd / 12.0 + bg_factor; // qsum_group;
 
   double *z_pos_local = NULL, *z_pos = NULL;
-  double **x = atom->x;
+  double** x  = atom->x;
   int my_disp = localGA_EachProc_Dipl[me];
   if (slabflag == 1) {
-    int *GA_seq_arr = &FIX->localGA_seq.front();
+    int* GA_seq_arr = &FIX->localGA_seq.front();
     memory->create(z_pos, totalGA_num, "pppm_la_conp/GA:z_pos");
     memory->create(z_pos_local, localGA_num, "pppm_la_conp/GA:localGA_num");
     for (int iGA = 0; iGA < localGA_num; ++iGA) {
-      int iseq = GA_seq_arr[iGA];
-      double iz = x[iseq][2];
+      int iseq         = GA_seq_arr[iGA];
+      double iz        = x[iseq][2];
       z_pos_local[iGA] = iz;
     }
-    MPI_Allgatherv(z_pos_local, localGA_EachProc[me], MPI_DOUBLE, z_pos, localGA_EachProc,
-                   localGA_EachProc_Dipl, MPI_DOUBLE, world);
+    MPI_Allgatherv(z_pos_local, localGA_EachProc[me], MPI_DOUBLE, z_pos, localGA_EachProc, localGA_EachProc_Dipl, MPI_DOUBLE, world);
 
     for (int iGA = 0; iGA < localGA_num; ++iGA) {
       // int iseq = GA_seq_arr[iGA];
-      if (me == 0 && iGA % 50 == 0 && screen) {
+      if (me == 0 && iGA % 50 == 0) {
         double dtime = MPI_Wtime() - t_begin;
-        fprintf(screen,
-                "[ConpGA] Post-treatment of E by progress = %2.2f%% for "
-                "{%d/%d}, time elapsed: %8.2f[s]\n",
-                (double) (iGA + 1) / localGA_num * 100, iGA + 1, localGA_num, dtime);
+        utils::logmesg(lmp,
+                       "[ConpGA] Post-treatment of E by progress = {:2.2f%}%% for "
+                       "{{{}/{}}}, time elapsed: {:8.2f}[s]\n",
+                       (double)(iGA + 1) / localGA_num * 100, iGA + 1, localGA_num, dtime);
       }
-      double iz = z_pos_local[iGA];
+      double iz     = z_pos_local[iGA];
       double iz_sqr = iz * iz;
       matrix[iGA][iGA + my_disp] -= diag_factor;
       for (int jGA = 0; jGA < totalGA_num; ++jGA) {
@@ -357,15 +353,17 @@ double **PPPM_LA_conp_GA::compute_AAA(double **matrix)
     }
   } else {
     for (int iGA = 0; iGA < localGA_num; ++iGA) {
-      if (me == 0 && iGA % 50 == 0 && screen) {
+      if (me == 0 && iGA % 50 == 0) {
         double dtime = MPI_Wtime() - t_begin;
-        fprintf(screen,
-                "[ConpGA] Post-treatment of E by progress = %2.2f%% for "
-                "{%d/%d}, time elapsed: %8.2f[s]\n",
-                (double) (iGA + 1) / localGA_num * 100, iGA + 1, localGA_num, dtime);
+        utils::logmesg(lmp,
+                       "[ConpGA] Post-treatment of E by progress = {:2.2f}%% for "
+                       "{{{}/{}}}, time elapsed: {:8.2f}[s]\n",
+                       (double)(iGA + 1) / localGA_num * 100, iGA + 1, localGA_num, dtime);
       }
       matrix[iGA][iGA + my_disp] -= diag_factor;
-      for (int jGA = 0; jGA < totalGA_num; ++jGA) { matrix[iGA][jGA] -= bg_factor; }
+      for (int jGA = 0; jGA < totalGA_num; ++jGA) {
+        matrix[iGA][jGA] -= bg_factor;
+      }
     }
   }
 
@@ -378,20 +376,20 @@ double **PPPM_LA_conp_GA::compute_AAA(double **matrix)
     memory->destroy(z_pos_local);
   }
   double dt = MPI_Wtime() - t_begin;
-  if (me == 0 and screen)
-    fprintf(screen,
-            "[ConpGA] Elps. Time %8.6f[s] of another matrix multiplication for "
-            "Ewald matrix calculation.\n",
-            dt);
+  if (me == 0)
+    utils::logmesg(lmp,
+                   "[ConpGA] Elps. Time {:8.6f}[s] of another matrix multiplication for "
+                   "Ewald matrix calculation.\n",
+                   dt);
 
   return matrix;
 }
 
-void PPPM_LA_conp_GA::settings(int narg, char **arg)
+void PPPM_LA_conp_GA::settings(int narg, char** arg)
 {
   if (narg < 1) error->all(FLERR, "Illegal kspace_style pppm command");
   accuracy_relative = fabs(utils::numeric(FLERR, arg[0], false, lmp));
-  int iarg = 1;
+  int iarg          = 1;
   while (iarg < narg) {
     if (strcmp(arg[iarg], "sv_SOL") == 0) {
       if (iarg + 2 > narg) error->all(FLERR, "Illegal pppm_conp/GA command for sv_SOL option.");
@@ -400,9 +398,8 @@ void PPPM_LA_conp_GA::settings(int narg, char **arg)
       } else if (strcmp(arg[iarg + 1], "off") == 0) {
         sv_SOL_Flag = false;
       } else
-        error->all(FLERR,
-                   "Illegal pppm_conp/GA command for sv_SOL option, the "
-                   "available options are on or off");
+        error->all(FLERR, "Illegal pppm_conp/GA command for sv_SOL option, the "
+                          "available options are on or off");
       iarg += 2;
     } else if (strcmp(arg[iarg], "sv_Xuv") == 0) {
       if (iarg + 2 > narg) error->all(FLERR, "Illegal pppm_conp/GA command for sv_Xuv option.");
@@ -411,9 +408,8 @@ void PPPM_LA_conp_GA::settings(int narg, char **arg)
       } else if (strcmp(arg[iarg + 1], "off") == 0) {
         matrix_flag = false;
       } else
-        error->all(FLERR,
-                   "Illegal pppm_conp/GA command for sv_Xuv option, the "
-                   "available options are on or off");
+        error->all(FLERR, "Illegal pppm_conp/GA command for sv_Xuv option, the "
+                          "available options are on or off");
       iarg += 2;
     } else if (strcmp(arg[iarg], "fixed") == 0) {
       if (iarg + 2 > narg) error->all(FLERR, "Illegal pppm_conp/GA command for sv_SOL option.");
@@ -422,9 +418,8 @@ void PPPM_LA_conp_GA::settings(int narg, char **arg)
       } else if (strcmp(arg[iarg + 1], "off") == 0) {
         fixed_flag = false;
       } else
-        error->all(FLERR,
-                   "Illegal pppm_conp/GA command for sv_SOL option, the "
-                   "available options are on or off");
+        error->all(FLERR, "Illegal pppm_conp/GA command for sv_SOL option, the "
+                          "available options are on or off");
       iarg += 2;
     } /*
       else if (strcmp(arg[iarg], "sv_GA") == 0) {
@@ -437,13 +432,13 @@ void PPPM_LA_conp_GA::settings(int narg, char **arg)
     else {
       error->all(FLERR, "Illegal pppm_conp/GA_la command for symbol %.200s\n", arg[iarg]);
     }
-  }    // while iarg
+  } // while iarg
 }
 void PPPM_LA_conp_GA::calc_GA_POT(double qsum_group, bool GG_Flag)
 {
 
   if (matrix_saved) {
-    ;    // if (me == 0) printf("calc_GA_POT() via the intermediate matrix...\n");
+    ; // if (me == 0) printf("calc_GA_POT() via the intermediate matrix...\n");
   } else {
     // if (me == 0) printf("calc_GA_POT() via the default FFT...\n");
     PPPM_conp_GA::calc_GA_POT(qsum_group, GG_Flag);
@@ -452,38 +447,40 @@ void PPPM_LA_conp_GA::calc_GA_POT(double qsum_group, bool GG_Flag)
 
   // cg->reverse_comm(this, REVERSE_RHO);
 
-  FixConpGA *FIX = electro->FIX;
-  int nx_conp = nxhi_out - nxlo_out + 1;    // nx_pppm + order + 1;
-  int ny_conp = nyhi_out - nylo_out + 1;    // ny_pppm + order + 1;
-  int nz_conp = nzhi_out - nzlo_out + 1;    // nz_pppm + order + 1;
-  int nxyz = nx_conp * ny_conp * nz_conp;
+  FixConpGA* FIX = electro->FIX;
+  int nx_conp    = nxhi_out - nxlo_out + 1; // nx_pppm + order + 1;
+  int ny_conp    = nyhi_out - nylo_out + 1; // ny_pppm + order + 1;
+  int nz_conp    = nzhi_out - nzlo_out + 1; // nz_pppm + order + 1;
+  int nxyz       = nx_conp * ny_conp * nz_conp;
 
-  int *GA_seq_arr = &FIX->localGA_seq.front();
+  int* GA_seq_arr = &FIX->localGA_seq.front();
   int localGA_num = FIX->localGA_num;
   int totalGA_num = FIX->totalGA_num;
 
-  double *q = atom->q;
-  double **x = atom->x;
+  double* q  = atom->q;
+  double** x = atom->x;
 
-  const double qscale = qqrd2e * scale;
-  const double a1 = g_ewald / MY_PIS;
-  const double a2 = MY_PI2 * qsum_group / (g_ewald * g_ewald * volume);
-  const double efact = qscale * MY_2PI / volume;
-  const double zprd = domain->prd[2];
+  const double qscale     = qqrd2e * scale;
+  const double a1         = g_ewald / MY_PIS;
+  const double a2         = MY_PI2 * qsum_group / (g_ewald * g_ewald * volume);
+  const double efact      = qscale * MY_2PI / volume;
+  const double zprd       = domain->prd[2];
   const double zprd_const = qsum_group * zprd * zprd / 12.0;
 
-  FFT_SCALAR *const density_arr = &(density_brick[nzlo_out][nylo_out][nxlo_out]);
+  FFT_SCALAR* const density_arr = &(density_brick[nzlo_out][nylo_out][nxlo_out]);
   // MPI_Allreduce(MPI_IN_PLACE, density_arr, nxyz, MPI_FFT_SCALAR, MPI_SUM,
   // world);
   for (int iGA = 0; iGA < totalGA_num; ++iGA) {
     FFT_SCALAR etmp = 0;
-    for (size_t i = 0; i < nxyz; ++i) { etmp += gw[iGA][i] * density_arr[i]; }
+    for (size_t i = 0; i < nxyz; ++i) {
+      etmp += gw[iGA][i] * density_arr[i];
+    }
     b_part[iGA] = etmp;
   }
   MPI_Allreduce(MPI_IN_PLACE, b_part, totalGA_num, MPI_FFT_SCALAR, MPI_SUM, world);
   int my_disp = FIX->localGA_EachProc_Dipl[me];
   for (int iGA = 0; iGA < localGA_num; ++iGA) {
-    int iseq = GA_seq_arr[iGA];
+    int iseq    = GA_seq_arr[iGA];
     eatom[iseq] = b_part[iGA + my_disp];
     if (GG_Flag) {
       eatom[iseq] -= a1 * q[iseq] + a2;
@@ -492,13 +489,10 @@ void PPPM_LA_conp_GA::calc_GA_POT(double qsum_group, bool GG_Flag)
     }
     // g_ewald*q[i]/MY_PIS + MY_PI2*qsum /
     //   (g_ewald*g_ewald*volume);
-    eatom[iseq] *= qscale;    // q[i] *
+    eatom[iseq] *= qscale; // q[i] *
 
     // slab correlation
-    if (slabflag == 1)
-      eatom[iseq] += efact *
-          (x[iseq][2] * dipole_group -
-           0.5 * (dipole_r2_group + qsum_group * x[iseq][2] * x[iseq][2]) - zprd_const);
+    if (slabflag == 1) eatom[iseq] += efact * (x[iseq][2] * dipole_group - 0.5 * (dipole_r2_group + qsum_group * x[iseq][2] * x[iseq][2]) - zprd_const);
   }
 }
 
@@ -511,29 +505,28 @@ void PPPM_LA_conp_GA::setup_FIX(int groupbit)
 /* ----------------------------------------------------
    calculate the intermediate matrix
 ---------------------------------------------------- */
-FFT_SCALAR **PPPM_LA_conp_GA::compute_intermediate_matrix(bool AAA_matrix_flag)
+FFT_SCALAR** PPPM_LA_conp_GA::compute_intermediate_matrix(bool AAA_matrix_flag)
 {
-  if (me == 0 && screen)
-    fprintf(screen,
-            "[ConpGA] compute intermediate matrix to replace FFT via "
-            "{pppm_la_conp/GA}\n");
+  if (me == 0)
+    utils::logmesg(lmp, "[ConpGA] compute intermediate matrix to replace FFT via "
+                        "{pppm_la_conp/GA}\n");
   MPI_Barrier(world);
-  double fft_time = MPI_Wtime();
+  double fft_time  = MPI_Wtime();
   size_t nxyz_pppm = nz_pppm * ny_pppm * nx_pppm;
   int k_disp, j_disp;
-  FFT_SCALAR ***greens_real;
+  FFT_SCALAR*** greens_real;
   memory->create(greens_real, nz_pppm, ny_pppm, nx_pppm, "pppm:greens_real");
-  FFT_SCALAR *const greens_real_arr = &greens_real[0][0][0];
+  FFT_SCALAR* const greens_real_arr = &greens_real[0][0][0];
   memset(greens_real_arr, 0, nxyz_pppm * sizeof(FFT_SCALAR));
 
   // fft green's funciton k -> r
   for (int i = 0, n = 0; i < nfft; i++) {
     work2[n++] = greensfn[i];
-    work2[n++] = ZEROF;    // *= greensfn[i];
+    work2[n++] = ZEROF; // *= greensfn[i];
   }
   fft2->compute(work2, work2, -1);
 
-  const double qscale = qqrd2e * scale;
+  const double qscale            = qqrd2e * scale;
   const FFT_SCALAR greens_factor = 0.5 / nxyz_pppm;
   for (int k = nzlo_in, n = 0; k <= nzhi_in; k++)
     for (int j = nylo_in; j <= nyhi_in; j++)
@@ -544,16 +537,16 @@ FFT_SCALAR **PPPM_LA_conp_GA::compute_intermediate_matrix(bool AAA_matrix_flag)
 
   MPI_Allreduce(MPI_IN_PLACE, greens_real_arr, nxyz_pppm, MPI_FFT_SCALAR, MPI_SUM, world);
 
-  int nx_out = nxhi_out - nxlo_out + 1;    // nx_pppm + order + 1;
-  int ny_out = nyhi_out - nylo_out + 1;    // ny_pppm + order + 1;
-  int nz_out = nzhi_out - nzlo_out + 1;    // nz_pppm + order + 1;
-  int nxyz_out = nx_out * ny_out * nz_out;
-  int nxy_pppm = nx_pppm * ny_pppm;
-  FixConpGA *FIX = electro->FIX;
-  int localGA_num = FIX->localGA_num;
-  int totalGA_num = FIX->totalGA_num;
-  int *localGA_EachProc = &FIX->localGA_EachProc.front();
-  int *localGA_EachProc_Dipl = &FIX->localGA_EachProc_Dipl.front();
+  int nx_out                 = nxhi_out - nxlo_out + 1; // nx_pppm + order + 1;
+  int ny_out                 = nyhi_out - nylo_out + 1; // ny_pppm + order + 1;
+  int nz_out                 = nzhi_out - nzlo_out + 1; // nz_pppm + order + 1;
+  int nxyz_out               = nx_out * ny_out * nz_out;
+  int nxy_pppm               = nx_pppm * ny_pppm;
+  FixConpGA* FIX             = electro->FIX;
+  int localGA_num            = FIX->localGA_num;
+  int totalGA_num            = FIX->totalGA_num;
+  int* localGA_EachProc      = &FIX->localGA_EachProc.front();
+  int* localGA_EachProc_Dipl = &FIX->localGA_EachProc_Dipl.front();
 
   /*
   printf("local nxy: %d<->%d[%d:%d], %d<->%d[%d:%d], %d<->%d[%d:%d]\n",
@@ -563,16 +556,16 @@ FFT_SCALAR **PPPM_LA_conp_GA::compute_intermediate_matrix(bool AAA_matrix_flag)
   */
   int order_Cb = order * order * order;
   // int *GA2grid_all,
-  int *grid_pos;
+  int* grid_pos;
   FFT_SCALAR **GA2rho_all, **gw_local, **gw_global, **gw_out = NULL;
-  FFT_SCALAR *rho_GA;
+  FFT_SCALAR* rho_GA;
 
   memory->create(gw_local, localGA_num, nxyz_pppm, "pppm:gw");
   memory->create(gw_global, totalGA_num, nxyz_pppm, "pppm:gw");
   memory->create(grid_pos, 3 * order_Cb, "pppm:grid_pos");
   memory->create(rho_GA, order_Cb, "pppm:rho_GA");
 
-  int *iptr = grid_pos;
+  int* iptr = grid_pos;
   for (int ni = nlower; ni <= nupper; ni++) {
     for (int mi = nlower; mi <= nupper; mi++) {
       for (int li = nlower; li <= nupper; li++) {
@@ -613,35 +606,35 @@ FFT_SCALAR **PPPM_LA_conp_GA::compute_intermediate_matrix(bool AAA_matrix_flag)
   GA2rho_Type, world); MPI_Type_free(&GA2rho_Type);
   */
 
-  char *occupied = NULL;
+  char* occupied = NULL;
 
   if (AAA_matrix_flag) {
     memory->create(occupied, nxyz_pppm, "pppm:occupied");
     memset(occupied, 0, nxyz_pppm * sizeof(bool));
     for (int iGA = 0; iGA < localGA_num; ++iGA) {
-      int iGA3 = iGA * 3;
+      int iGA3   = iGA * 3;
       int iGA_nx = GA2grid[iGA3];
       int iGA_ny = GA2grid[iGA3 + 1];
-      int iGA_nz = GA2grid[iGA3 + 2];    // nix s
+      int iGA_nz = GA2grid[iGA3 + 2]; // nix s
       for (int ni = nlower; ni <= nupper; ni++) {
         int miz = (nz_pppm + ni + iGA_nz) % nz_pppm;
         for (int mi = nlower; mi <= nupper; mi++) {
           int miy = (ny_pppm + mi + iGA_ny) % ny_pppm;
           for (int li = nlower; li <= nupper; li++) {
-            int mix = (nx_pppm + li + iGA_nx) % nx_pppm;
+            int mix                                        = (nx_pppm + li + iGA_nx) % nx_pppm;
             occupied[miz * nxy_pppm + miy * nx_pppm + mix] = true;
-          }    // li
-        }      // mi
-      }        // ni
-    }          // iGA
+          } // li
+        }   // mi
+      }     // ni
+    }       // iGA
     MPI_Allreduce(MPI_IN_PLACE, occupied, nxyz_pppm, MPI_C_BOOL, MPI_LOR, world);
     int occupied_dots = 0;
     for (size_t i = 0; i < nxyz_pppm; ++i) {
       if (occupied[i]) occupied_dots++;
     }
-    if (me == 0 && screen)
-      fprintf(screen, "[ConpGA] for the mesh points covered by GA atoms is %.2f%% for {%d/%ld}\n",
-              100 * double(occupied_dots) / nxyz_pppm, occupied_dots, nxyz_pppm);
+    if (me == 0)
+      utils::logmesg(lmp, "[ConpGA] for the mesh points covered by GA atoms is {:.2f}%% for {{{}/{}}}\n", 100 * double(occupied_dots) / nxyz_pppm,
+                     occupied_dots, nxyz_pppm);
   }
 
   // printf("%d %d %d %d %d %d\n", GA2grid_all[0], GA2grid_all[1],
@@ -649,16 +642,16 @@ FFT_SCALAR **PPPM_LA_conp_GA::compute_intermediate_matrix(bool AAA_matrix_flag)
   //  GA2grid_all[3], GA2grid_all[4], GA2grid_all[5]);
   // print_hash(&GA2rho_all[0][nlower], totalGA_num * 3 * order, "GA2rho_all");
   for (int iGA = 0; iGA < localGA_num; iGA++) {
-    if (me == 0 && iGA % 50 == 0 && screen) {
+    if (me == 0 && iGA % 50 == 0) {
       double dtime = MPI_Wtime() - fft_time;
-      if (me == 0 and screen)
-        fprintf(screen, "progress = %2.2f%% for {%d/%d}, time elapsed: %8.2f[s]\n",
-                (double) (iGA + 1) / localGA_num * 100, iGA + 1, localGA_num, dtime);
+      if (me == 0)
+        utils::logmesg(lmp, "progress = {:.2f}%% for {{{}/{}}}, time elapsed: {:8.2f}[s]\n", (double)(iGA + 1) / localGA_num * 100, iGA + 1, localGA_num,
+                       dtime);
     }
-    int iGA3 = iGA * 3;
+    int iGA3   = iGA * 3;
     int iGA_nx = GA2grid[iGA3];
     int iGA_ny = GA2grid[iGA3 + 1];
-    int iGA_nz = GA2grid[iGA3 + 2];    // nix s
+    int iGA_nz = GA2grid[iGA3 + 2]; // nix s
     /*
     int* iptr = grid_pos;
     int* jptr = grid_pos;
@@ -671,24 +664,24 @@ FFT_SCALAR **PPPM_LA_conp_GA::compute_intermediate_matrix(bool AAA_matrix_flag)
     }
     */
 
-    FFT_SCALAR *ptr_x = GA2rho[iGA3 + 0];
-    FFT_SCALAR *ptr_y = GA2rho[iGA3 + 1];
-    FFT_SCALAR *ptr_z = GA2rho[iGA3 + 2];
-    int *iptr = grid_pos;
-    int ii = 0;
+    FFT_SCALAR* ptr_x = GA2rho[iGA3 + 0];
+    FFT_SCALAR* ptr_y = GA2rho[iGA3 + 1];
+    FFT_SCALAR* ptr_z = GA2rho[iGA3 + 2];
+    int* iptr         = grid_pos;
+    int ii            = 0;
     for (int ni = nlower; ni <= nupper; ni++) {
       FFT_SCALAR iz0 = ptr_z[ni];
-      int miz = ni + iGA_nz;
+      int miz        = ni + iGA_nz;
       for (int mi = nlower; mi <= nupper; mi++) {
         FFT_SCALAR iy0 = iz0 * ptr_y[mi];
-        int miy = mi + iGA_ny;
+        int miy        = mi + iGA_ny;
         for (int li = nlower; li <= nupper; li++) {
-          int mix = li + iGA_nx;
+          int mix        = li + iGA_nx;
           FFT_SCALAR ix0 = iy0 * ptr_x[li];
-          rho_GA[ii] = ix0;
-          iptr[0] = miz;
-          iptr[1] = miy;
-          iptr[2] = mix;
+          rho_GA[ii]     = ix0;
+          iptr[0]        = miz;
+          iptr[1]        = miy;
+          iptr[2]        = mix;
           iptr += 3;
           ii++;
         }
@@ -731,10 +724,10 @@ FFT_SCALAR **PPPM_LA_conp_GA::compute_intermediate_matrix(bool AAA_matrix_flag)
     }
     */
 
-    FFT_SCALAR *gw_ptr = gw_local[iGA];
+    FFT_SCALAR* gw_ptr = gw_local[iGA];
 
     if (AAA_matrix_flag) {
-      char *oPtr = occupied;
+      char* oPtr = occupied;
       for (int mjz = 0; mjz < nz_pppm; mjz++) {
         for (int mjy = 0; mjy < ny_pppm; mjy++) {
           for (int mjx = 0; mjx < nx_pppm; mjx++) {
@@ -745,11 +738,11 @@ FFT_SCALAR **PPPM_LA_conp_GA::compute_intermediate_matrix(bool AAA_matrix_flag)
               continue;
             }
             FFT_SCALAR tmp = 0.0;
-            iptr = grid_pos;
+            iptr           = grid_pos;
             for (int ii = 0; ii < order_Cb; ++ii) {
-              int mz = abs(mjz - iptr[0]) % nz_pppm;
-              int my = abs(mjy - iptr[1]) % ny_pppm;
-              int mx = abs(mjx - iptr[2]) % nx_pppm;
+              int mz  = abs(mjz - iptr[0]) % nz_pppm;
+              int my  = abs(mjy - iptr[1]) % ny_pppm;
+              int mx  = abs(mjx - iptr[2]) % nx_pppm;
               int ind = mz * nxy_pppm + my * nx_pppm + mx;
               tmp += rho_GA[ii] * greens_real_arr[ind];
               iptr += 3;
@@ -759,18 +752,18 @@ FFT_SCALAR **PPPM_LA_conp_GA::compute_intermediate_matrix(bool AAA_matrix_flag)
             oPtr++;
           }
         }
-      }    // mjz
+      } // mjz
     } else {
       for (int mjz = 0; mjz < nz_pppm; mjz++) {
         for (int mjy = 0; mjy < ny_pppm; mjy++) {
           for (int mjx = 0; mjx < nx_pppm; mjx++) {
 
             FFT_SCALAR tmp = 0.0;
-            iptr = grid_pos;
+            iptr           = grid_pos;
             for (int ii = 0; ii < order_Cb; ++ii) {
-              int mz = abs(mjz - iptr[0]) % nz_pppm;
-              int my = abs(mjy - iptr[1]) % ny_pppm;
-              int mx = abs(mjx - iptr[2]) % nx_pppm;
+              int mz  = abs(mjz - iptr[0]) % nz_pppm;
+              int my  = abs(mjy - iptr[1]) % ny_pppm;
+              int mx  = abs(mjx - iptr[2]) % nx_pppm;
               int ind = mz * nxy_pppm + my * nx_pppm + mx;
               tmp += rho_GA[ii] * greens_real_arr[ind];
               iptr += 3;
@@ -779,7 +772,7 @@ FFT_SCALAR **PPPM_LA_conp_GA::compute_intermediate_matrix(bool AAA_matrix_flag)
             gw_ptr++;
           }
         }
-      }    // mjz
+      } // mjz
     }
     /*
     printf("<-%d->\n", iGA);
@@ -787,18 +780,17 @@ FFT_SCALAR **PPPM_LA_conp_GA::compute_intermediate_matrix(bool AAA_matrix_flag)
     folder(gw[iGA], gw_local[iGA]);
     print_hash(gw[iGA], nxyz_out, "gw_show");
     */
-  }    // iGA
+  } // iGA
 
   MPI_Datatype PPPM_Type;
   MPI_Type_contiguous(nxyz_pppm, MPI_FFT_SCALAR, &PPPM_Type);
   MPI_Type_commit(&PPPM_Type);
-  MPI_Allgatherv(&gw_local[0][0], localGA_EachProc[me], PPPM_Type, &gw_global[0][0],
-                 localGA_EachProc, localGA_EachProc_Dipl, PPPM_Type, world);
+  MPI_Allgatherv(&gw_local[0][0], localGA_EachProc[me], PPPM_Type, &gw_global[0][0], localGA_EachProc, localGA_EachProc_Dipl, PPPM_Type, world);
   MPI_Type_free(&PPPM_Type);
 
   if (AAA_matrix_flag) {
-    gw_out = gw_global;
-    gw_global = gw_local;    // to destroy gw_local;
+    gw_out    = gw_global;
+    gw_global = gw_local; // to destroy gw_local;
   } else {
     memory->destroy(gw_local);
     memory->create(gw_local, totalGA_num, nxyz_out, "pppm:gw for nxyz_out");
@@ -814,11 +806,11 @@ FFT_SCALAR **PPPM_LA_conp_GA::compute_intermediate_matrix(bool AAA_matrix_flag)
   memory->destroy(gw_global);
   MPI_Barrier(world);
   fft_time = MPI_Wtime() - fft_time;
-  if (me == 0 && screen)
-    fprintf(screen,
-            "[ConpGA] Elps. Time %8.6f[s] for the intermediate matrix "
-            "calculation.\n",
-            fft_time);
+  if (me == 0)
+    utils::logmesg(lmp,
+                   "[ConpGA] Elps. Time {:8.6f}[s] for the intermediate matrix "
+                   "calculation.\n",
+                   fft_time);
   if (AAA_matrix_flag == false) {
     matrix_saved = true;
     memory->create(b_part, totalGA_num, "pppm_la:b_part");
@@ -826,14 +818,14 @@ FFT_SCALAR **PPPM_LA_conp_GA::compute_intermediate_matrix(bool AAA_matrix_flag)
   return gw_out;
 }
 
-void PPPM_LA_conp_GA::folder(FFT_SCALAR *dst, FFT_SCALAR *src, char *occupied)
+void PPPM_LA_conp_GA::folder(FFT_SCALAR* dst, FFT_SCALAR* src, char* occupied)
 {
-  int nx_out = nxhi_out - nxlo_out + 1;    // nx_pppm + order + 1;
-  int ny_out = nyhi_out - nylo_out + 1;    // ny_pppm + order + 1;
-  int nz_out = nzhi_out - nzlo_out + 1;    // nz_pppm + order + 1;
-  int nxyz_out = nx_out * ny_out * nz_out;
+  int nx_out    = nxhi_out - nxlo_out + 1; // nx_pppm + order + 1;
+  int ny_out    = nyhi_out - nylo_out + 1; // ny_pppm + order + 1;
+  int nz_out    = nzhi_out - nzlo_out + 1; // nz_pppm + order + 1;
+  int nxyz_out  = nx_out * ny_out * nz_out;
   int nxyz_pppm = nx_pppm * ny_pppm * nz_pppm;
-  int nxy_pppm = nx_pppm * ny_pppm;
+  int nxy_pppm  = nx_pppm * ny_pppm;
   for (int mjz = nzlo_out; mjz <= nzhi_out; mjz++) {
     int mz = (mjz + nz_pppm) % nz_pppm;
     for (int mjy = nylo_out; mjy <= nyhi_out; mjy++) {

@@ -99,18 +99,10 @@ using namespace LAMMPS_NS;
 using namespace FixConst;
 using namespace MathConst;
 
-enum { CONSTANT, EQUAL, ATOM };
-enum { MIN_INV, MIN_CG, MIN_PCG, MIN_PCG_EX, MIN_NONE };
-enum { FULL, NORMAL, DC };
 enum { REV_Q, REV_COUL, REV_COUL_RM, REV_FORCE };
-enum { TOL_REL_B, TOL_MAX_Q, TOL_RES, TOL_PE, TOL_STD_Q, TOL_STD_RQ, TOL_ABS_Q };
-enum { SYM_NONE, SYM_MEAN, SYM_SQRT, SYM_TRAN };
-enum { CONTROL_NONE, CONTROL_METAL, CONTROL_CHARGED };
-enum { varTYPE_CONST, varTYPE_EQUAL, varTYPE_ATOM };
-enum { CELL_NONE, CELL_POT_CONTROL, CELL_Q_CONTROL };
 
 // #define INTEL_MPI
-#define FIX_CONPGA_VERSION 1.65a
+#define FIX_CONPGA_VERSION 1.66
 #define xstr(s) str(s)
 #define str(s) #s
 
@@ -163,7 +155,7 @@ static char* strnstr_l(const char* s, int N)
   for (int i = len_s; i >= 0; --i) {
     if (s[i] == '.') return (char*)(s + i);
   }
-  return NULL;
+  return nullptr;
 }
 
 // comp function of sparsify_invAAA_EX
@@ -189,7 +181,7 @@ char* strnstr(const char* haystack, const char* needle, size_t len)
 
     haystack++;
   }
-  return NULL;
+  return nullptr;
 }
 
 FixConpGA::FixConpGA(LAMMPS* lmp, int narg, char** arg) : Fix(lmp, narg, arg)
@@ -197,42 +189,50 @@ FixConpGA::FixConpGA(LAMMPS* lmp, int narg, char** arg) : Fix(lmp, narg, arg)
   FUNC_MACRO(0)
   me = comm->me;
 
+  if (me == 0) {
 #ifndef CONP_NO_DEBUG
-  if (me == 0 and screen) fprintf(screen, "[ConpGA] start Fix/conpGA %s with -DEBUG- version\n", xstr(FIX_CONPGA_VERSION));
+    utils::logmesg(lmp, "[ConpGA] start Fix/conpGA {} with -DEBUG- version\n", xstr(FIX_CONPGA_VERSION));
 #else
-  if (me == 0 and screen) fprintf(screen, "[ConpGA] start Fix/conpGA %s with RELEASE verion, no debug module\n", xstr(FIX_CONPGA_VERSION));
+    utils::logmesg(lmp, "[ConpGA] start Fix/conpGA {} with RELEASE verion, no debug \n", xstr(FIX_CONPGA_VERSION));
 #endif
+
 #if __cplusplus < 201103L // For C++11
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] Using std::map from C++\n");
+    utils::logmesg(lmp, "[ConpGA] Using std::map from C++\n");
 #else
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] Using std::unordered_map from C++11\n");
+    utils::logmesg(lmp, "[ConpGA] Using std::unordered_map from C++11\n");
 #endif
+
 #ifdef MKL_ILP64
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] Using the MKL_ILP64 library\n");
+    utils::logmesg(lmp, "[ConpGA] Using the MKL_ILP64 library\n");
 #else
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] Using the default 32bit matrix library\n");
+    utils::logmesg(lmp, "[ConpGA] Using the default 32bit matrix library for MKL and other BLAS library\n");
 #endif
+
 #ifdef SCALAPACK
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] Built with SCALAPACK\n");
+    utils::logmesg(lmp, "[ConpGA] Linked with SCALAPACK\n");
 #else
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] Built with LAPACK\n");
+    utils::logmesg(lmp, "[ConpGA] Linked with LAPACK\n");
 #endif
+
 #ifdef INTEL_MPI
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] Using the INTEL_MPI predefinition\n");
+    utils::logmesg(lmp, "[ConpGA] Using the predifined INTEL_MPI macro\n");
 #endif
+  } // me == 0
 
   int i;
   double value;
   char info[512], *save_format;
-  int n        = atom->ntypes;
-  comm_forward = comm_reverse = 1; // very important
-  pcg_mat_sel                 = NORMAL;
-  newton_pair                 = force->newton_pair;
-  gewald_tune_factor          = 1;
-  work_me                     = -1;
-  maxiter                     = 100;
-  tolerance = pseuo_tolerance = 0.000001;
-  tol_style                   = -1;
+  int n              = atom->ntypes;
+  comm_forward       = 1; // very important
+  comm_reverse       = 1;
+  pcg_mat_sel        = PCG_MAT::NORMAL;
+  newton_pair        = force->newton_pair;
+  gewald_tune_factor = 1;
+  work_me            = -1;
+  maxiter            = 100;
+  tolerance          = 0.000001;
+  pseuo_tolerance    = 0.000001;
+  tol_style          = TOL::NONE;
 
   // Deprecated
   /*
@@ -249,7 +249,7 @@ FixConpGA::FixConpGA(LAMMPS* lmp, int narg, char** arg) : Fix(lmp, narg, arg)
   valid_check_flag    = false;
 
   // Default setup
-  symmetry_flag      = SYM_NONE;
+  symmetry_flag      = SYM::NONE;
   neutrality_flag    = true;
   update_Vext_flag   = false;
   unit_flag          = 1; // Default unit for [U] as eV
@@ -264,19 +264,20 @@ FixConpGA::FixConpGA(LAMMPS* lmp, int narg, char** arg) : Fix(lmp, narg, arg)
   DEBUG_SOLtoGA      = true;
   DEBUG_GAtoGA       = true;
 
-  Ele_GAnum           = NULL;
-  Ele_Cell_Model      = CELL_NONE;
+  Ele_GAnum           = nullptr;
+  Ele_Cell_Model      = CELL::NONE;
   Ele_num             = 0;
   Ele_iter            = 0;
   valid_check_firstep = 5;
   check_tol           = 1e-8;
-  Xi_self_index = setup_run = pcg_neighbor_size_local = 0;
-  scalapack_num                                       = 10000;
-  sparse_pcg_num                                      = 1000;
-  size_map                                            = 1000000;
-  max_liwork                                          = std::numeric_limits<MKL_INT>::max();
-  max_lwork                                           = std::numeric_limits<MKL_INT>::max();
-  inv_qe2f                                            = 1;
+  Xi_self_index = setup_run = 0;
+  pcg_neighbor_size_local   = 0;
+  scalapack_num             = 10000;
+  sparse_pcg_num            = 1000;
+  size_map                  = 1000000;
+  max_liwork                = std::numeric_limits<MKL_INT>::max();
+  max_lwork                 = std::numeric_limits<MKL_INT>::max();
+  inv_qe2f                  = 1;
 
   Uchem = Ushift     = 0.0;
   update_Q_totaltime = update_Q_time = 0.0;
@@ -286,21 +287,21 @@ FixConpGA::FixConpGA(LAMMPS* lmp, int narg, char** arg) : Fix(lmp, narg, arg)
   nprocs                             = comm->nprocs;
   pcg_shift = pcg_shift_scale = ppcg_invAAA_cut = 0;
   env_alpha_stepsize                            = 0;
-  P_PPCG = q_iters  = NULL;
-  DEBUG_fxyz_store  = NULL;
-  DEBUG_eatom_store = NULL;
-  BBB = BBB_localGA = block_ave_value = NULL;
-  Ele_qsum = Ele_Uchem = Ele_qave = Ele_qsq = NULL;
-  B0_prev = B0_store = Q_GA_store = NULL;
-  extraGA_num = extraGA_disp = NULL;
-  all_ghostGA_ind = comm_recv_arr = NULL;
-  // pcg_localGA_firstneigh = pcg_localGA_firstneigh_localIndex = NULL;
-  // pcg_localGA_firstneigh_inva = NULL;
-  ppcg_GAindex     = NULL;
-  pcg_out          = NULL;
-  localGA_Vext     = NULL;
-  localGA_eleIndex = NULL;
-  Ele_matrix = Ele_D_matrix = NULL;
+  P_PPCG = q_iters  = nullptr;
+  DEBUG_fxyz_store  = nullptr;
+  DEBUG_eatom_store = nullptr;
+  BBB = BBB_localGA = block_ave_value = nullptr;
+  Ele_qsum = Ele_Uchem = Ele_qave = Ele_qsq = nullptr;
+  B0_prev = B0_store = Q_GA_store = nullptr;
+  extraGA_num = extraGA_disp = nullptr;
+  all_ghostGA_ind = comm_recv_arr = nullptr;
+  // pcg_localGA_firstneigh = pcg_localGA_firstneigh_localIndex = nullptr;
+  // pcg_localGA_firstneigh_inva = nullptr;
+  ppcg_GAindex     = nullptr;
+  pcg_out          = nullptr;
+  localGA_Vext     = nullptr;
+  localGA_eleIndex = nullptr;
+  Ele_matrix = Ele_D_matrix = nullptr;
   kspace_g_ewald            = -1;
   kspace_nn_pppm[0]         = -1;
   kspace_nn_pppm[1]         = -1;
@@ -310,7 +311,7 @@ FixConpGA::FixConpGA(LAMMPS* lmp, int narg, char** arg) : Fix(lmp, narg, arg)
   bisect_num                = 1;
   size_subAAA               = 100;
   B0_refresh_time = qsqsum_refresh_time = 100;
-  electro                               = NULL;
+  electro                               = nullptr;
 
 #ifndef CONP_NO_DEBUG
   B0_refresh_time     = 1;
@@ -324,15 +325,16 @@ FixConpGA::FixConpGA(LAMMPS* lmp, int narg, char** arg) : Fix(lmp, narg, arg)
 
   // GA_Vext.assign(n + 1, 0);
   // memory->create(GA_Vext, n + 1, "FixConpGA::GA_Flags")
-  GA_Vext_str = NULL;
-  GA_Flags = GA_Vext_info = NULL;
-  GA_Vext_var             = NULL;
-  Ele_Control_Type = Ele_To_aType = NULL;
+  GA_Vext_str = nullptr;
+  GA_Flags = GA_Vext_info = nullptr;
+  GA_Vext_var             = nullptr;
+  Ele_Control_Type        = nullptr;
+  Ele_To_aType            = nullptr;
 iseq:
 
-  memory->create(GA_Flags, 3 * (n + 1), "FixConpGA::GA_Flags");
-  GA_Vext_info      = GA_Flags + (n + 1);
-  int* GA_Vext_type = GA_Vext_info + (n + 1);
+  memory->create(GA_Flags, 2 * (n + 1), "FixConpGA::GA_Flags");
+  GA_Vext_info = GA_Flags + (n + 1);
+  memory->create(GA_Vext_type, (n + 1), "FixConpGA::GA_Vext_type");
   GA_Vext_ATOM_data = (double**)memory->smalloc(sizeof(double*) * (n + 1), "FixConpGA::GA_Vext_ATOM_data");
   GA_Vext_str       = (char**)memory->smalloc(sizeof(char*) * (n + 1), "FixConpGA::GA_Vext_str");
   memory->create(GA_Vext_var, (n + 1), "FixConpGA::GA_Vext_var");
@@ -340,13 +342,13 @@ iseq:
   memory->create(Ele_To_aType, n + 1, "FixConpGA::Ele_To_aType");
   for (size_t i = 0; i <= n; i++) {
     GA_Flags[i]          = 0; // 0 For non-control electrolyte atoms
-    GA_Vext_str[i]       = NULL;
+    GA_Vext_str[i]       = nullptr;
     GA_Vext_info[i]      = -1;            // Index of variable
-    GA_Vext_type[i]      = varTYPE_CONST; // the Default type is constant
+    GA_Vext_type[i]      = varTYPE::NONE; // the Default type is constant
     GA_Vext_var[i]       = std::numeric_limits<double>::quiet_NaN();
-    Ele_Control_Type[i]  = CONTROL_NONE;
+    Ele_Control_Type[i]  = CONTROL::NONE;
     Ele_To_aType[i]      = -1;
-    GA_Vext_ATOM_data[i] = NULL;
+    GA_Vext_ATOM_data[i] = nullptr;
   }
 
   // self_ECpotential = Xi_self = 0.0;
@@ -358,27 +360,28 @@ iseq:
   everynum = utils::inumeric(FLERR, arg[3], false, lmp);
   if (everynum < 0) error->all(FLERR, "Illegal fix conp command for fix every step");
   if (strcmp(arg[4], "inv") == 0) {
-    minimizer = MIN_INV;
+    minimizer = MIN::INV;
   } else if (strcmp(arg[4], "cg") == 0) {
-    minimizer = MIN_CG;
-    tol_style = TOL_REL_B;
+    minimizer = MIN::CG;
+    tol_style = TOL::REL_B;
   } else if (strcmp(arg[4], "pcg") == 0) {
-    minimizer   = MIN_PCG;
-    pcg_mat_sel = FULL;
-    tol_style   = TOL_REL_B;
+    minimizer   = MIN::PCG;
+    pcg_mat_sel = PCG_MAT::FULL;
+    tol_style   = TOL::REL_B;
   } else if (strcmp(arg[4], "ppcg") == 0) {
-    minimizer       = MIN_PCG_EX;
-    pcg_mat_sel     = FULL;
-    tol_style       = TOL_REL_B;
+    minimizer       = MIN::PCG_EX;
+    pcg_mat_sel     = PCG_MAT::FULL;
+    tol_style       = TOL::REL_B;
     ppcg_invAAA_cut = 1.0e-4;
     pcg_shift_scale = 1;
   } else if (strcmp(arg[4], "none") == 0) {
-    minimizer = MIN_NONE;
-    tol_style = TOL_REL_B;
+    minimizer = MIN::NONE;
+    tol_style = TOL::REL_B;
   } else
     error->all(FLERR, "Illegal fix conp command for unknown minimization method");
 
-  if (me == 0 and screen) fprintf(screen, "[ConpGA] update electrode charge every %d loop.\n", everynum);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] update electrode charge every {} loop.\n", everynum);
+
   int iarg = 5;
   while (iarg < narg) {
     if (strcmp(arg[iarg], "tol") == 0) {
@@ -407,26 +410,26 @@ iseq:
     } else if (strcmp(arg[iarg], "tol_style") == 0) {
       if (iarg + 2 > narg) error->all(FLERR, "Illegal fix conp/GA command for tol option.");
       if (strcmp(arg[iarg + 1], "res") == 0) {
-        tol_style = TOL_RES;
-        if (me == 0 && screen) fprintf(screen, "[ConpGA] PCG using the criteria for minimal residual\n");
+        tol_style = TOL::RES;
+        if (me == 0) utils::logmesg(lmp, "[ConpGA] PCG using the criteria for minimal residual\n");
       } else if (strcmp(arg[iarg + 1], "pe") == 0) {
-        tol_style = TOL_PE;
-        if (me == 0 && screen) fprintf(screen, "[ConpGA] PCG using the criteria for minimal delta eneergy\n");
+        tol_style = TOL::PE;
+        if (me == 0) utils::logmesg(lmp, "[ConpGA] PCG using the criteria for minimal delta eneergy\n");
       } else if (strcmp(arg[iarg + 1], "max_Q") == 0) {
-        tol_style = TOL_MAX_Q;
-        if (me == 0 && screen) fprintf(screen, "[ConpGA] PCG using the criteria for minimal delta Q\n");
+        tol_style = TOL::MAX_Q;
+        if (me == 0) utils::logmesg(lmp, "[ConpGA] PCG using the criteria for minimal delta Q\n");
       } else if (strcmp(arg[iarg + 1], "std_Q") == 0) {
-        tol_style = TOL_STD_Q;
-        if (me == 0 && screen) fprintf(screen, "[ConpGA] PCG using the criteria for minimal std Q\n");
+        tol_style = TOL::STD_Q;
+        if (me == 0) utils::logmesg(lmp, "[ConpGA] PCG using the criteria for minimal std Q\n");
       } else if (strcmp(arg[iarg + 1], "rel_Q") == 0) {
-        tol_style = TOL_STD_RQ;
-        if (me == 0 && screen) fprintf(screen, "[ConpGA] PCG using the criteria for minimal std RQ\n");
+        tol_style = TOL::STD_RQ;
+        if (me == 0) utils::logmesg(lmp, "[ConpGA] PCG using the criteria for minimal std RQ\n");
       } else if (strcmp(arg[iarg + 1], "abs_Q") == 0) {
-        tol_style = TOL_ABS_Q;
-        if (me == 0 && screen) fprintf(screen, "[ConpGA] PCG using the criteria for minimal ABS RQ\n");
+        tol_style = TOL::ABS_Q;
+        if (me == 0) utils::logmesg(lmp, "[ConpGA] PCG using the criteria for minimal ABS RQ\n");
       } else if (strcmp(arg[iarg + 1], "rel_B") == 0) {
-        tol_style = TOL_REL_B;
-        if (me == 0 && screen) fprintf(screen, "[ConpGA] PCG using the criteria for minimal B0 * q\n");
+        tol_style = TOL::REL_B;
+        if (me == 0) utils::logmesg(lmp, "[ConpGA] PCG using the criteria for minimal B0 * q\n");
       } else {
         error->all(FLERR, "Illegal fix conp/GA command for tol_style option, tolerance value "
                           "only valid for res, pe, max_Q, std_Q, rel_Q and abs_Q");
@@ -461,8 +464,8 @@ iseq:
       Ele_num++;
       GA_Flags[i]               = Ele_num;
       Ele_To_aType[Ele_num - 1] = i;
-      if (strcmp(arg[iarg], "metal") == 0) Ele_Control_Type[Ele_num] = CONTROL_METAL;
-      if (strcmp(arg[iarg], "charged") == 0) Ele_Control_Type[Ele_num] = CONTROL_CHARGED;
+      if (strcmp(arg[iarg], "metal") == 0) Ele_Control_Type[Ele_num] = CONTROL::METAL;
+      if (strcmp(arg[iarg], "charged") == 0) Ele_Control_Type[Ele_num] = CONTROL::CHARGED;
       iarg += 3;
     } else if (strcmp(arg[iarg], "Smat") == 0) {
       if (iarg + 2 > narg) error->all(FLERR, "Illegal fix conp/GA command for Smat option.");
@@ -473,7 +476,7 @@ iseq:
       } else
         error->all(FLERR, "Illegal fix conp/GA command for Smat option, the "
                           "available options are on or off");
-      if (minimizer != MIN_INV) Smatrix_flag = false;
+      if (minimizer != MIN::INV) Smatrix_flag = false;
       iarg += 2;
     } else if (strcmp(arg[iarg], "printf_me") == 0) {
       if (iarg + 2 > narg) error->all(FLERR, "Illegal fix conp/GA command for printf_me option.");
@@ -598,10 +601,10 @@ iseq:
 #ifndef CONP_NO_DEBUG
       if (me == 0) {
         pcg_out = fopen(arg[iarg + 1], "w");
-        if (pcg_out == NULL) {
+        if (pcg_out == nullptr) {
           error->warning(FLERR, "cannot open the file for the pcg_analysis!\n");
         }
-        if (screen) fprintf(screen, "[ConpGA] save the convergent info into %s.", arg[iarg + 1]);
+        utils::logmesg(lmp, "[ConpGA] save the convergent info into {}.", arg[iarg + 1]);
       }
 
 #else
@@ -687,7 +690,7 @@ iseq:
       strncpy(AAA_save, arg[iarg + 1], FIX_CONP_GA_WIDTH);
       save_format = strnstr_l(AAA_save,
                               FIX_CONP_GA_WIDTH); // strnstr(AAA_save, ".", FIX_CONP_GA_WIDTH);
-      if (save_format == NULL) error->all(FLERR, "Cannot find matrix_save format for fix conp/GA command");
+      if (save_format == nullptr) error->all(FLERR, "Cannot find matrix_save format for fix conp/GA command");
       if (strcmp(save_format, ".binmat") == 0)
         AAA_save_format = 1;
       else if (strcmp(save_format, ".txtmat") == 0)
@@ -708,9 +711,9 @@ iseq:
         std::ifstream infile(AAA_save);
         if (!infile.good()) {
           AAA_save_format %= 10;
-          if (screen && me == 0) fprintf(screen, "[ConpGA] Save GA matrix to %s\n", AAA_save);
+          if (me == 0) utils::logmesg(lmp, "[ConpGA] Save GA matrix to {}\n", AAA_save);
         } else {
-          if (screen && me == 0) fprintf(screen, "[ConpGA] load GA matrix from %s\n", AAA_save);
+          if (me == 0) utils::logmesg(lmp, "[ConpGA] load GA matrix from {}\n", AAA_save);
           AAA_save_format += 10;
         }
       } else if (strcmp(arg[iarg + 2], "none") == 0) {
@@ -764,23 +767,23 @@ iseq:
         bisect_level++;
       }
       bisect_num = 1 << bisect_level;
-      if (me == 0 && screen) fprintf(screen, "[ConpGA] set the number of block in PPCG method as %d as 2^{%d}\n", bisect_num, bisect_level);
+      if (me == 0) utils::logmesg(lmp, "[ConpGA] set the number of block in PPCG method as {} as 2^{{{}}}}\n", bisect_num, bisect_level);
       iarg += 2;
 
     } else if (strcmp(arg[iarg], "symmetry") == 0) {
       if (iarg + 2 > narg) error->all(FLERR, "Illegal fix conp/GA command for symmetry option!");
 #ifndef CONP_NO_DEBUG
       if (strcmp(arg[iarg + 1], "on") == 0) {
-        symmetry_flag = SYM_MEAN;
+        symmetry_flag = SYM::MEAN;
         iarg += 2;
       } else if (strcmp(arg[iarg + 1], "off") == 0) {
-        symmetry_flag = SYM_NONE;
+        symmetry_flag = SYM::NONE;
         iarg += 2;
       } else if (strcmp(arg[iarg + 1], "sqrt") == 0) {
-        symmetry_flag = SYM_SQRT;
+        symmetry_flag = SYM::SQRT;
         iarg += 2;
       } else if (strcmp(arg[iarg + 1], "tran") == 0) {
-        symmetry_flag = SYM_TRAN;
+        symmetry_flag = SYM::TRAN;
         iarg += 2;
       } else
         error->all(FLERR, "Illegal fix conp/GA command for symmetry option, "
@@ -791,19 +794,19 @@ iseq:
     } else if (strcmp(arg[iarg], "pcg_mat") == 0) {
       if (iarg + 2 > narg) error->all(FLERR, "Illegal fix conp/GA command for pcg_matrix option!");
       if (strcmp(arg[iarg + 1], "full") == 0) {
-        pcg_mat_sel = FULL;
+        pcg_mat_sel = PCG_MAT::FULL;
         iarg += 2;
       } else if (strcmp(arg[iarg + 1], "normal") == 0) {
-        pcg_mat_sel = NORMAL;
+        pcg_mat_sel = PCG_MAT::NORMAL;
         iarg += 2;
       } else if (strcmp(arg[iarg + 1], "DC") == 0) {
         if (iarg + 4 > narg)
           error->all(FLERR, "Illegal fix conp/GA command for pcg_matrix-DC options, \
             the valid options are full, normal or DC!");
-        pcg_mat_sel        = DC;
+        pcg_mat_sel        = PCG_MAT::DC;
         gewald_tune_factor = utils::numeric(FLERR, arg[iarg + 2], false, lmp);
         pseuo_tolerance    = utils::numeric(FLERR, arg[iarg + 3], false, lmp);
-        if (me == 0 && screen) fprintf(screen, "[ConpGA] DC_gewald = %f, tolerance %e\n", gewald_tune_factor, pseuo_tolerance);
+        if (me == 0) utils::logmesg(lmp, "[ConpGA] DC_gewald = {:f}, tolerance {:e}\n", gewald_tune_factor, pseuo_tolerance);
         iarg += 4;
       } else
         error->all(FLERR, "Illegal fix conp command for pcg_matrix options, "
@@ -828,7 +831,7 @@ iseq:
       } else
         error->all(FLERR, "Illegal fix conp command for first options, the "
                           "valid options are on, off");
-      // if (me == 0 && screen) fprintf(screen, "[ConpGA] First option has been
+      // if (me == 0) utils::logmesg(lmp, "[ConpGA] First option has been
       // deprecated, by setting FALSE for all input!\n");
       iarg += 2;
       // Calulcate the GA <-> GA interaction via the internal
@@ -861,14 +864,14 @@ iseq:
 
   if (firstgroup_flag) {
     // atom->sortfreq = 0;
-    if (atom->firstgroupname != NULL) {
+    if (atom->firstgroupname != nullptr) {
       int firstgroup = group->find(atom->firstgroupname);
       if (firstgroup != igroup) {
         error->all(FLERR, "First group in ATOM class has already be set to be "
                           "another group of atoms");
       }
     }
-    if (me == 0 && screen) fprintf(screen, "[ConpGA] Group [%s] atoms is sorted on the top of local atom list\n", arg[1]);
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] Group [{}] atoms is sorted on the top of local atom list\n", arg[1]);
   }
 
   /*
@@ -878,14 +881,14 @@ iseq:
   }
   */
   switch (minimizer) {
-    case MIN_PCG:
+    case MIN::PCG:
       break;
-    case MIN_CG:
-      if (tol_style > TOL_RES) {
+    case MIN::CG:
+      if (tol_style > TOL::RES) {
         /*
-        tol_style = TOL_REL_B;
-        if (me == 0 && screen)
-          fprintf(screen, "[ConpGA] the stop criterion is not implemented in CG "
+        tol_style = TOL::REL_B;
+        if (me == 0)
+          utils::logmesg(lmp, "[ConpGA] the stop criterion is not implemented in CG "
                           "method, using [res_B] instead!\n");
         */
         error->all(FLERR, "[ConpGA] the stop criterion is not implemented in CG "
@@ -897,12 +900,12 @@ iseq:
         }
       }
       break;
-    case MIN_PCG_EX:
-      if (tol_style > TOL_RES) {
+    case MIN::PCG_EX:
+      if (tol_style > TOL::RES) {
         /*
-        tol_style = TOL_REL_B;
-        if (me == 0 && screen)
-          fprintf(screen, "[ConpGA] the stop criterion is not implemented in "
+        tol_style = TOL::REL_B;
+        if (me == 0)
+          utils::logmesg(lmp, "[ConpGA] the stop criterion is not implemented in "
                           "PPCG method, using [res_B] instead!\n");
         */
         error->all(FLERR, "[ConpGA] the stop criterion is not implemented in CG "
@@ -913,10 +916,10 @@ iseq:
       }
       break;
     default:
-      tol_style = -1;
+      tol_style = TOL::NONE;
   }
 
-  if (tol_style == TOL_RES || tol_style == TOL_STD_Q || tol_style == TOL_STD_RQ) {
+  if (tol_style == TOL::RES || tol_style == TOL::STD_Q || tol_style == TOL::STD_RQ) {
     tolerance *= tolerance;
   }
 
@@ -925,9 +928,9 @@ iseq:
     // on! (current pair is off)");
   }
 
-  list      = NULL;
-  AAA       = NULL;
-  AAA_sum1D = NULL; // q_store = NULL;
+  list      = nullptr;
+  AAA       = nullptr;
+  AAA_sum1D = nullptr; // q_store = nullptr;
   localGA_EachProc.reserve(nprocs);
   localGA_EachProc_Dipl.reserve(nprocs);
 
@@ -946,7 +949,7 @@ iseq:
 
   setup_CELL();
   /*
-  if (minimizer == MIN_PCG && cut_coul_add != 0) {
+  if (minimizer == MIN::PCG && cut_coul_add != 0) {
     pcg_localGA_firstneigh            = new std::vector<int>;
     pcg_localGA_firstneigh_localIndex = new std::vector<int>;
     pcg_localGA_firstneigh_inva       = new std::vector<double>;
@@ -969,21 +972,21 @@ void FixConpGA::setup_CELL()
   bool metal_flag   = false;
   for (int iEle = 1; iEle <= Ele_num; iEle++) {
     int iType = Ele_To_aType[iEle];
-    if (Ele_Control_Type[iEle] == CONTROL_METAL) {
-      if (me == 0 and screen)
-        fprintf(screen,
-                "[ConpGA] Atom Type %d is set as %dth electrode with POTENTIAL "
-                "control at %f\n",
-                iType, iEle, GA_Vext_var[iType]);
+    if (Ele_Control_Type[iEle] == CONTROL::METAL) {
+      if (me == 0)
+        utils::logmesg(lmp,
+                       "[ConpGA] Atom Type {} is set as {}th electrode with POTENTIAL "
+                       "control at {:f}\n",
+                       iType, iEle, GA_Vext_var[iType]);
       metal_flag = true;
-    } else if (Ele_Control_Type[iEle] == CONTROL_CHARGED) {
-      if (me == 0 and screen)
-        fprintf(screen,
-                "[ConpGA] Atom Type %d as %dth electrode with CHARGE control "
-                "at %f\n",
-                iType, iEle, GA_Vext_var[iType]);
+    } else if (Ele_Control_Type[iEle] == CONTROL::CHARGED) {
+      if (me == 0)
+        utils::logmesg(lmp,
+                       "[ConpGA] Atom Type {} as {}th electrode with CHARGE control "
+                       "at {:f}\n",
+                       iType, iEle, GA_Vext_var[iType]);
       charged_flag = true;
-      if (GA_Vext_info[iType + n_plus] == varTYPE_ATOM) {
+      if (GA_Vext_type[iType + n_plus] == varTYPE::ATOM) {
         char buf[256];
         sprintf("Cannot apply the Charged constraint of %s for Atom:[%d]\n", GA_Vext_str[iType], iType);
         error->all(FLERR, buf);
@@ -996,19 +999,19 @@ void FixConpGA::setup_CELL()
                       "CHARGED electrode control\n");
   } else {
     if (metal_flag == true) {
-      Ele_Cell_Model = CELL_POT_CONTROL;
+      Ele_Cell_Model = CELL::POT;
     }
     if (charged_flag == true) {
-      Ele_Cell_Model = CELL_Q_CONTROL;
+      Ele_Cell_Model = CELL::Q;
     }
   }
 
   postreat_flag = calc_EleQ_flag = false;
   switch (Ele_Cell_Model) {
-    case CELL_POT_CONTROL:
-      if (me == 0 and screen)
-        fprintf(screen, "[ConpGA] The electrochemcial simulation cell in on "
-                        "POT_CONTROL model.\n");
+    case CELL::POT:
+      if (me == 0)
+        utils::logmesg(lmp, "[ConpGA] The electrochemcial simulation cell in on "
+                            "POT_CONTROL model.\n");
       if (neutrality_flag == true && Smatrix_flag == false) {
         postreat_flag = true;
       }
@@ -1023,10 +1026,10 @@ void FixConpGA::setup_CELL()
       }
       break;
 
-    case CELL_Q_CONTROL:
-      if (me == 0 and screen)
-        fprintf(screen, "[ConpGA] The electrochemcial simulation cell in on "
-                        "Q_CONTROL model.\n");
+    case CELL::Q:
+      if (me == 0)
+        utils::logmesg(lmp, "[ConpGA] The electrochemcial simulation cell in on "
+                            "Q_CONTROL model.\n");
       postreat_flag = true;
       if (Uchem_extract_flag == true) {
         error->warning(FLERR, "The extraction of Uchem contribution is only "
@@ -1068,7 +1071,7 @@ void FixConpGA::firstgroup_check()
   in electrode group\n", me, i, tag[i], type[i]); error->one(FLERR, info);
     }
   }
-  if(me && screen) fprintf(screen, "[ConpGA] electrode atom group is resorted as
+  if(me) utils::logmesg(lmp, "[ConpGA] electrode atom group is resorted as
   the top of atom list\n");
   */
 }
@@ -1095,11 +1098,11 @@ FixConpGA::~FixConpGA()
   memory->destroy(extraGA_num);
   memory->destroy(extraGA_disp);
 
-  if (minimizer == MIN_INV) {
+  if (minimizer == MIN::INV) {
     memory->destroy(BBB);
     memory->destroy(BBB_localGA);
   }
-  if (minimizer == MIN_PCG_EX) {
+  if (minimizer == MIN::PCG_EX) {
     memory->destroy(ppcg_block);
     memory->destroy(ppcg_GAindex);
     memory->destroy(P_PPCG);
@@ -1114,15 +1117,15 @@ FixConpGA::~FixConpGA()
     */
   }
   memory->destroy(Q_GA_store);
-  if (minimizer == MIN_PCG) {
+  if (minimizer == MIN::PCG) {
 #ifndef CONP_NO_DEBUG
-    if (pcg_out != NULL) {
+    if (pcg_out != nullptr) {
       memory->destroy(q_iters);
       memory->destroy(pcg_res_norm);
       if (me == 0) fclose(pcg_out);
     }
 #endif
-    if (tol_style == TOL_REL_B) {
+    if (tol_style == TOL::REL_B) {
       memory->destroy(B0_prev);
       memory->destroy(B0_next);
       if (force_analysis_flag == true) memory->destroy(B0_store);
@@ -1150,7 +1153,7 @@ FixConpGA::~FixConpGA()
   for (it = VextID_to_ATOM_store.begin(); it != VextID_to_ATOM_store.end(); it++) {
     double* ptr = it->second;
     memory->destroy(ptr);
-    it->second = NULL;
+    it->second = nullptr;
   }
 
   int n = atom->ntypes;
@@ -1185,36 +1188,36 @@ void FixConpGA::post_run()
 {
   double inv_Ele_iter = 1.0 / Ele_iter;
   double double_qe2f  = 2 * force->qe2f;
-  if (me == 0 && screen) {
+  if (me == 0) {
     switch (Ele_Cell_Model) {
-      case CELL_POT_CONTROL:
-        fprintf(screen, "\n---------- [Conp] Electrode charge fluctuation for %d invoking ---------------\n", Ele_iter);
+      case CELL::POT:
+        utils::logmesg(lmp, "\n---------- [Conp] Electrode charge fluctuation for {} invoking ---------------\n", Ele_iter);
         for (int i = 0; i < Ele_num; i++) {
           double q_ave = Ele_qave[i] * inv_Ele_iter;
           double q_std = sqrt(Ele_qsq[i] * inv_Ele_iter - q_ave * q_ave);
           double U     = (localGA_Vext[i] - Uchem) * double_qe2f;
-          fprintf(screen, "[Ele%.2d] <Q> = %.12f; std{Q} = %.12f @ Pot %.6f V\n", i + 1, q_ave, q_std, U);
+          utils::logmesg(lmp, "[Ele{:2d}] <Q> = {:.12f}; std{Q} = {:.12f} @ Pot {:.6f} V\n", i + 1, q_ave, q_std, U);
         }
-        fprintf(screen, "\n");
+        utils::logmesg(lmp, "\n");
         for (int i = 0; i < Ele_num; i++) {
           double q_ave = Ele_qave[i] * inv_Ele_iter / Ele_GAnum[i];
           double q_std = sqrt(Ele_qsq[i] * inv_Ele_iter - q_ave * q_ave) / Ele_GAnum[i];
           double U     = (localGA_Vext[i] - Uchem) * double_qe2f;
-          fprintf(screen, "[Ele%.2d] <q_i> = %.12f; std{q_i} = %.12f; Ele. Atom = %d\n", i + 1, q_ave, q_std, Ele_GAnum[i]);
+          utils::logmesg(lmp, "[Ele{:2d}] <q_i> = {:.12f}; std{q_i} = {:.12f}; Ele. Atom = {}\n", i + 1, q_ave, q_std, Ele_GAnum[i]);
         }
-        fprintf(screen, "-------------End [Conp] Electrode charge fluctuation -------------\n\n");
+        utils::logmesg(lmp, "-------------End [Conp] Electrode charge fluctuation -------------\n\n");
         break;
-      case CELL_Q_CONTROL:
-        fprintf(screen, "\n---------- [Conp] Electrode Potential fluctuation for %d invoking ---------------\n", Ele_iter);
+      case CELL::Q:
+        utils::logmesg(lmp, "\n---------- [Conp] Electrode Potential fluctuation for {} invoking ---------------\n", Ele_iter);
         for (int i = 0; i < Ele_num; i++) {
           int iType    = Ele_To_aType[i];
           double U_ave = Ele_qave[i] * inv_Ele_iter;
           double U_std = sqrt(Ele_qsq[i] * inv_Ele_iter - U_ave * U_ave) * double_qe2f;
           double Q     = GA_Vext_var[iType];
           U_ave *= double_qe2f;
-          fprintf(screen, "[Ele%.2d] <U> = %.12f V; std{U} = %.12f V @ Charge %.6f e\n", i + 1, U_ave, U_std, Q);
+          utils::logmesg(lmp, "[Ele{:2d}] <U> = {:.12f} V; std{U} = {:.12f} V @ Charge {:.6f} e\n", i + 1, U_ave, U_std, Q);
         }
-        fprintf(screen, "-------------End [Conp] Electrode Potential fluctuation -------------\n\n");
+        utils::logmesg(lmp, "-------------End [Conp] Electrode Potential fluctuation -------------\n\n");
         break;
       default:;
     }
@@ -1240,23 +1243,22 @@ void FixConpGA::setup_Vext()
   FUNC_MACRO(0);
   char buff[256];
 
-  int n             = atom->ntypes;
-  int* GA_Vext_type = GA_Vext_info + (n + 1);
+  int n = atom->ntypes;
   // int num_ATOM = 0;
   for (int i = 0; i <= n; i++) {
     if (GA_Vext_str[i]) {
-      if (me == 0 && screen && DEBUG_LOG_LEVEL > 0) fprintf(screen, "[Debug] GA_Vext_str for %s[%d]\n", GA_Vext_str[i], i);
+      if (me == 0 && DEBUG_LOG_LEVEL > 0) utils::logmesg(lmp, "[Debug] GA_Vext_str for {}[{}]\n", GA_Vext_str[i], i);
       GA_Vext_info[i] = input->variable->find(GA_Vext_str[i]);
       if (GA_Vext_info[i] < 0) {
         sprintf(buff, "Variable [%s] for fix move does not exist", GA_Vext_str[i]);
         error->all(FLERR, buff);
       }
       if (input->variable->equalstyle(GA_Vext_info[i])) {
-        GA_Vext_type[i] = varTYPE_EQUAL;
+        GA_Vext_type[i] = varTYPE::EQUAL;
       } else if (input->variable->atomstyle(GA_Vext_info[i])) {
-        if (me == 0 && screen && DEBUG_LOG_LEVEL > 0) fprintf(screen, "[Debug] Vext: %s for atomType:%d is a ATOM style\n", GA_Vext_str[i], i);
-        GA_Vext_type[i]                       = varTYPE_ATOM;
-        VextID_to_ATOM_store[GA_Vext_info[i]] = NULL;
+        if (me == 0 && DEBUG_LOG_LEVEL > 0) utils::logmesg(lmp, "[Debug] Vext: {} for atomType:{} is a ATOM style\n", GA_Vext_str[i], i);
+        GA_Vext_type[i]                       = varTYPE::ATOM;
+        VextID_to_ATOM_store[GA_Vext_info[i]] = nullptr;
       } else {
         sprintf(buff, "Variable [%s] is not EQUAL or Atom style", GA_Vext_str[i]);
         error->all(FLERR, buff);
@@ -1274,7 +1276,6 @@ void FixConpGA::update_Vext()
   int nlocal           = atom->nlocal;
   int* type            = atom->type;
   double half_inv_qe2f = 0.5 * inv_qe2f;
-  int* GA_Vext_type    = GA_Vext_info + (n + 1);
 
   std::map<int, double*>::iterator it;
   for (it = VextID_to_ATOM_store.begin(); it != VextID_to_ATOM_store.end(); it++) {
@@ -1290,12 +1291,12 @@ void FixConpGA::update_Vext()
   for (int iEle = 0; iEle < Ele_num; iEle++) {
     int iType = Ele_To_aType[iEle];
     // printf("compute %f, iType = %d\n", iEle, iType);
-    if (GA_Vext_type[iType] == varTYPE_EQUAL) {
+    if (GA_Vext_type[iType] == varTYPE::EQUAL) {
       double value = input->variable->compute_equal(GA_Vext_info[iType]);
-      if (me == 0 && screen && DEBUG_LOG_LEVEL > -1) fprintf(screen, "[Debug] Equal Set atomType:%d as [%f]\n", iType, value);
+      if (me == 0 && DEBUG_LOG_LEVEL > -1) utils::logmesg(lmp, "[Debug] Equal Set atomType:{} as [{:f}]\n", iType, value);
       // GA_Vext_var[iType] = half_inv_qe2f * value + Uchem;
       GA_Vext_var[iType] = value;
-    } else if (GA_Vext_type[iType] == varTYPE_ATOM) {
+    } else if (GA_Vext_type[iType] == varTYPE::ATOM) {
       // printf("iType = %d, %x\n", iType,
       // VextID_to_ATOM_store[GA_Vext_info[iType]]);
       GA_Vext_ATOM_data[iType] = VextID_to_ATOM_store[GA_Vext_info[iType]];
@@ -1311,9 +1312,9 @@ void FixConpGA::update_Vext()
       }
       */
     } else {
-      if (me == 0 && screen && DEBUG_LOG_LEVEL > 0) fprintf(screen, "[Debug] CONST Set atomType:%d as [%f]\n", iType, GA_Vext_var[iType]);
+      if (me == 0 && DEBUG_LOG_LEVEL > 0) utils::logmesg(lmp, "[Debug] CONST Set atomType:{} as [{:f}]\n", iType, GA_Vext_var[iType]);
     }
-    // fprintf(screen, "[Debug] Type[%d] Set atomType:%d as [%f]\n",
+    // utils::logmesg(lmp, "[Debug] Type[%d] Set atomType:%d as [%f]\n",
     // GA_Vext_str_Type[iType], iType, GA_Vext_var[iType]);
   }
 
@@ -1322,8 +1323,8 @@ void FixConpGA::update_Vext()
     int iseq  = GA_seq_arr[iGA];
     int iType = type[iseq];
     int iEle  = GA_Flags[iType];
-    if (Ele_Control_Type[iEle] == CONTROL_METAL) {
-      if (GA_Vext_type[iType] != varTYPE_ATOM) {
+    if (Ele_Control_Type[iEle] == CONTROL::METAL) {
+      if (GA_Vext_type[iType] != varTYPE::ATOM) {
         localGA_Vext[iGA] = half_inv_qe2f * GA_Vext_var[iType] + Uchem;
         // printf("iGA2 = %d\n", iGA);
         // if (iGA == 0) printf("%d, localGA_Vext[iGA] = %f\n", iGA,
@@ -1358,16 +1359,17 @@ void FixConpGA::force_analysis(int eflag, int vflag)
   double fres_total, fsqr_total, fmax_total;
 
   double fx, fy, fz;
-  int tol_style_store = tol_style, curriter_store = curriter, i, i3;
-  int* type = atom->type;
-  int isel  = 1;
+  TOL tol_style_store = tol_style;
+  int curriter_store  = curriter, i, i3;
+  int* type           = atom->type;
+  int isel            = 1;
 
   /* store the results in the previous step */
   q_store.reserve(localGA_num);
   double* const q_store_arr = Q_GA_store;
   double Ushift_store       = Ushift;
   // printf("Ushift = %.16f, %.16f\n", Ushift, Uchem);
-  if (tol_style == TOL_REL_B) {
+  if (tol_style == TOL::REL_B) {
     for (i = 0; i < localGA_num; ++i) {
       q_store_arr[i] = q[localGA_seq[i]];
       B0_store[i]    = B0_prev[i];
@@ -1382,19 +1384,19 @@ void FixConpGA::force_analysis(int eflag, int vflag)
   std::copy(f[0], f[0] + nlocal * 3, f_store);
 
   tolerance = 1e-17;
-  tol_style = TOL_MAX_Q;
+  tol_style = TOL::MAX_Q;
   switch (minimizer) {
-    case MIN_CG:
+    case MIN::CG:
       update_charge_cg();
       break;
-    case MIN_PCG:
+    case MIN::PCG:
       update_charge_pcg();
       break;
-    case MIN_PCG_EX:
+    case MIN::PCG_EX:
       update_charge_ppcg();
       break;
     default:
-      error->all(FLERR, "force_analysis() only valid for MIN_CG, MIN_PCG or MIN_PPCG methods");
+      error->all(FLERR, "force_analysis() only valid for MIN::CG, MIN::PCG or MIN::PPCG methods");
   }
 
   curriter  = curriter_store;
@@ -1439,7 +1441,7 @@ void FixConpGA::force_analysis(int eflag, int vflag)
   // printf("Ushift = %.16f, %.16f\n", Ushift, Uchem);
 
   Ushift = Ushift_store;
-  if (tol_style == TOL_REL_B) {
+  if (tol_style == TOL::REL_B) {
     for (i = 0; i < localGA_num; ++i) {
       q[localGA_seq[i]] = q_store_arr[i];
       B0_prev[i]        = B0_store[i];
@@ -1478,6 +1480,7 @@ void FixConpGA::calc_Uchem_with_zero_Q_sol()
   }
   MPI_Bcast(&Ushift, 1, MPI_DOUBLE, iproc, world);
   Uchem += Ushift;
+
   // printf("Uchem = %.12f, Ushfit = %f, ecoul = %.12f[%.10f,%.10f], q = %.12f\n", Uchem, Ushift, ecoul, cl_atom[iseq], kspace_eatom[iseq], q[iseq]);
   for (i = 0; i < localGA_num; i++) {
     localGA_Vext[i] += Ushift;
@@ -1520,7 +1523,7 @@ void FixConpGA::pre_reverse(int eflag, int vflag)
       const int* const GA_seq_arr = &localGA_seq.front();
       double* kspace_eatom        = force->kspace->eatom;
 
-      if (me == 0 and screen and DEBUG_LOG_LEVEL > 0) fprintf(screen, "[ConpGA] check the validation of electrode potential.\n");
+      if (me == 0 and DEBUG_LOG_LEVEL > 0) utils::logmesg(lmp, "[ConpGA] check the validation of electrode potential.\n");
 
       // energy_clear();
       int nlocal = atom->nlocal;
@@ -1559,11 +1562,11 @@ void FixConpGA::pre_reverse(int eflag, int vflag)
       // reset for the next one;
 
       if (pair_saved || eflag / 2 != 1) {
-        if (screen && me == 0 && DEBUG_LOG_LEVEL > 0)
-          fprintf(screen,
-                  "[ConpGA] Compute the per-atom energy! with eflag = %d, vflag "
-                  "= %d\n",
-                  eflag, vflag);
+        if (me == 0 && DEBUG_LOG_LEVEL > 0)
+          utils::logmesg(lmp,
+                         "[ConpGA] Compute the per-atom energy! with eflag = {}, vflag "
+                         "= {}\n",
+                         eflag, vflag);
         // update the per-atom energy
         force_clear();
         force->pair->compute(eflag + 2, vflag);
@@ -1591,26 +1594,26 @@ void FixConpGA::pre_reverse(int eflag, int vflag)
           // #ifndef CONP_NO_DEBUG
           ecoul_error = fabs((ecoul - econtrol) / econtrol);
           if (DEBUG_LOG_LEVEL > -1) {
-            printf("[Proc. #%d] iseq: %d[tag:%d-type:%d]; ecoul: %.20g[%g/%g:%g]; "
-                   "econtrol: %.20g [Q%.20g * %.10g]; error: %g; Uchem: %g\n",
-                   me, iseq, localGA_tag[i], type[iseq], ecoul, cl_atom[iseq], eatom[iseq], kspace_eatom[iseq], econtrol, q[iseq], localGA_Vext[i], ecoul_error,
-                   Uchem);
+            utils::logmesg(lmp,
+                           "[Proc. #{}] iseq: {}[tag:{}-type:{}]; ecoul: {:.20g}[cl:{:g}/ea:{:g}:ek:{:g}]; "
+                           "econtrol: {:.20g} [Q:{:.20g} x V:{:.10g}]; error: {:g}; Uchem: {:g}\n",
+                           me, iseq, localGA_tag[i], type[iseq], ecoul, cl_atom[iseq], eatom[iseq], kspace_eatom[iseq], econtrol, q[iseq], localGA_Vext[i],
+                           ecoul_error, Uchem);
           }
           // #endif
           error->one(FLERR, "Invalid electrostatic potential by Fix Conp/GA!\n");
         }
       }
       if (pair_saved) {
-        if (run_steps == 0 && me == 0 && screen) printf("[first-step] cannot be set to be zero with a saved pair calculation\n");
+        if (run_steps == 0 && me == 0) utils::logmesg(lmp, "[first-step] cannot be set to be zero with a saved pair calculation\n");
         for (i = 0; i < nlocal; ++i) {
           double eatom_ctrl = eatom[i];
           double echeck_tol = 10 * check_tol;
           if (!isclose(eatom_ctrl, DEBUG_eatom_store[i], echeck_tol)) {
             double epair_error = fabs((eatom_ctrl - DEBUG_eatom_store[i]) / eatom_ctrl);
             // if (epair_error > check_tol) {
-            if (screen)
-              fprintf(screen, "[Proc. #%d] eatom[%d] %.12g vs %.12g; cl_atom: %.10f vs %.10f, error: %.10g\n", me, i, eatom_ctrl, DEBUG_eatom_store[i],
-                      cl_atom[i], DEBUG_eatom_store[i + nlocal], epair_error);
+            utils::logmesg(lmp, "[Proc. #%d] eatom[%d] %.12g vs %.12g; cl_atom: %.10f vs %.10f, error: %.10g\n", me, i, eatom_ctrl, DEBUG_eatom_store[i],
+                           cl_atom[i], DEBUG_eatom_store[i + nlocal], epair_error);
             error->one(FLERR, "Invalid pair energy by Fix Conp/GA!\n");
           }
 
@@ -1619,19 +1622,17 @@ void FixConpGA::pre_reverse(int eflag, int vflag)
           if (!isclose(fx, DEBUG_fxyz_store[i][0], fcheck_tol)) {
             // if (fx_e > check_tol) {
             double fx_e = fabs((fx - DEBUG_fxyz_store[i][0]) / fx);
-            if (screen) fprintf(screen, "[Proc. #%d] fx[%d] %.12g vs %.12g; error: %.10g\n", me, i, fx, DEBUG_fxyz_store[i][0], fx_e);
+            utils::logmesg(lmp, "[Proc. #{}] fx[{}] {:.12g} vs {:.12g}; error: {:.10g}\n", me, i, fx, DEBUG_fxyz_store[i][0], fx_e);
             error->one(FLERR, "Invalid pair energy by Fix Conp/GA!\n");
           }
           if (!isclose(fy, DEBUG_fxyz_store[i][1], fcheck_tol)) {
             double fy_e = fabs((fy - DEBUG_fxyz_store[i][1]) / fy);
-            if (screen) fprintf(screen, "[Proc. #%d] fx[%d] %.12g vs %.12g; error: %.10g\n", me, i, fy, DEBUG_fxyz_store[i][1], fy_e);
+            utils::logmesg(lmp, "[Proc. #{}] fx[{}] {:.12g} vs {:.12g}; error: {:.10g}\n", me, i, fx, DEBUG_fxyz_store[i][1], fy_e);
             error->one(FLERR, "Invalid pair energy by Fix Conp/GA!\n");
           }
           if (!isclose(fz, DEBUG_fxyz_store[i][2], fcheck_tol)) {
             double fz_e = fabs((fz - DEBUG_fxyz_store[i][2]) / fz);
-
-            if (screen) fprintf(screen, "[Proc. #%d] fx[%d] %.12g vs %.12g; error: %.10g\n", me, i, fz, DEBUG_fxyz_store[i][2], fz_e);
-
+            utils::logmesg(lmp, "[Proc. #{}] fx[{}] {:.12g} vs {:.12g}; error: {:.10g}\n", me, i, fx, DEBUG_fxyz_store[i][2], fz_e);
             error->one(FLERR, "Invalid pair energy by Fix Conp/GA!\n");
           }
         }
@@ -1662,14 +1663,14 @@ void FixConpGA::init() { MPI_Comm_rank(world, &me); }
 
 void FixConpGA::Print_INFO()
 {
-  if (!(me == 0 && screen)) {
+  if (!(me == 0)) {
     return;
   }
-  fprintf(screen, "<--------------------------- Fix Conp/GA INFO "
-                  "----------------------------->\n");
-  fprintf(screen, "\n\n\n\n");
-  fprintf(screen, "<-----------------------------------------------------------"
-                  "--------------->\n");
+  utils::logmesg(lmp, "<--------------------------- Fix Conp/GA INFO "
+                      "----------------------------->\n");
+  utils::logmesg(lmp, "\n\n\n\n");
+  utils::logmesg(lmp, "<-----------------------------------------------------------"
+                      "--------------->\n");
 }
 
 void FixConpGA::localGA_build()
@@ -1694,21 +1695,21 @@ void FixConpGA::localGA_build()
     }
   }
   MPI_Allreduce(&qlocal_SOL, &qtotal_SOL, 1, MPI_DOUBLE, MPI_SUM, world);
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] The total charge in solution is %.16f\n", qtotal_SOL);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] The total charge in solution is {:.16f}\n", qtotal_SOL);
   if (fabs(qtotal_SOL) > 1e-11 && Smatrix_flag == true) {
     error->all(FLERR, "The Smatrix approach is not compatiable with the "
                       "monopolar electrolyte solution (Q^{SOL} \neq 0)");
   }
   // printf("neutrality_flag = %d, Ele_Cell_Model = %d\n",
   //  neutrality_flag, Ele_Cell_Model);
-  if (neutrality_flag && Ele_Cell_Model == CELL_Q_CONTROL) {
+  if (neutrality_flag && Ele_Cell_Model == CELL::Q) {
     double Q_on_electrode = 0;
     for (int i = 0; i < Ele_num; i++) {
       int iType = Ele_To_aType[i];
       Q_on_electrode += GA_Vext_var[iType];
     }
     if (fabs(Q_on_electrode + qtotal_SOL) > 1e-11) {
-      if (me == 0 && screen) fprintf(screen, "Charge on GA: %g; Charge on SOL: %g; Total Q: %.12g\n", Q_on_electrode, qtotal_SOL, Q_on_electrode + qtotal_SOL);
+      if (me == 0) utils::logmesg(lmp, "Charge on GA: {:g}; Charge on SOL: {:g}; Total Q: {:.12g}\n", Q_on_electrode, qtotal_SOL, Q_on_electrode + qtotal_SOL);
       error->all(FLERR, "In consistent charge constraint on the electrode with "
                         "the neutrality requirement.");
     }
@@ -1805,16 +1806,14 @@ void FixConpGA::localGA_build()
   tag_to_num_of_ghost.empty();
   tag_and_size_vec.empty();
 
-  fflush(screen);
   MPI_Barrier(world);
   for (int iproc = 0; iproc < nprocs; ++iproc) {
-    if (me == iproc && screen)
-      fprintf(screen,
-              "[ConpGA] CPU[%d]:local: %d, nb_ghost: %d, self_ghost: %d, "
-              "used:%d;\n",
-              me, localGA_num, ghostGA_num, dupl_ghostGA_num, usedGA_num);
+    if (me == iproc)
+      utils::logmesg(lmp,
+                     "[ConpGA] CPU[{}]:local: {}, nb_ghost: {}, self_ghost: {}, "
+                     "used:{};\n",
+                     me, localGA_num, ghostGA_num, dupl_ghostGA_num, usedGA_num);
   }
-  fflush(screen);
   MPI_Barrier(world);
   /* ------------------------------------------------------
    Structure of localGA
@@ -1919,46 +1918,46 @@ void FixConpGA::setup(int vflag)
   int dim        = -1;
   self_GreenCoef = (double*)force->pair->extract("self_Greenf", dim);
   // printf("%x %d\n", self_GreenCoef, dim);
-  if (dim != 1 || self_GreenCoef == NULL) error->all(FLERR, "Cannot obtain self_GreenCoef from pair function\n");
+  if (dim != 1 || self_GreenCoef == nullptr) error->all(FLERR, "Cannot obtain self_GreenCoef from pair function\n");
   for (i = 1; i <= n; i++) {
-    if (me == 0 && screen) fprintf(screen, "[ConpGA] type:%d, self_GreenCoef: %f\n", i, self_GreenCoef[i]);
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] type:{}, self_GreenCoef: {:f}\n", i, self_GreenCoef[i]);
   }
 
   double* ptr;
   ptr = (double*)force->pair->extract("cut_coulsq", dim);
-  if (dim != 0 || ptr == NULL) error->all(FLERR, "Cannot obtain cut_coulsq from pair function\n");
+  if (dim != 0 || ptr == nullptr) error->all(FLERR, "Cannot obtain cut_coulsq from pair function\n");
   cut_coulsq = *ptr;
   cut_coul   = sqrt(cut_coulsq);
 
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] cut_coul = %f; cut_coulsq = %f\n", cut_coul, cut_coulsq);
-  if (minimizer == MIN_PCG && pcg_mat_sel == DC) {
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] cut_coul = {:f}; cut_coulsq = {:f}\n", cut_coul, cut_coulsq);
+  if (minimizer == MIN::PCG && pcg_mat_sel == PCG_MAT::DC) {
     if (cut_coul_add > neighbor->skin) {
-      if (me == 0 && screen)
-        fprintf(screen,
-                "[ConpGA] the delta coul cut-off = %f in PCG-DC calculation is "
-                "large than the skin of neighbor = %f!\n",
-                cut_coul_add, neighbor->skin);
+      if (me == 0)
+        utils::logmesg(lmp,
+                       "[ConpGA] the delta coul cut-off = {:f} in PCG-DC calculation is "
+                       "large than the skin of neighbor = {:f}!\n",
+                       cut_coul_add, neighbor->skin);
     }
     if (cut_coul_add + cut_coul < 0)
       error->all(FLERR, "The net cutoff for DC P-matrix generation is smaller than zero!\n");
-    else if (me == 0 && screen)
-      fprintf(screen, "[ConpGA] PCG cut = %f\n", cut_coul_add + cut_coul);
+    else if (me == 0)
+      utils::logmesg(lmp, "[ConpGA] PCG cut = {:f}\n", cut_coul_add + cut_coul);
   }
   ptr = (double*)force->pair->extract("g_ewald", dim);
-  if (dim != 0 || ptr == NULL) error->all(FLERR, "Cannot obtain g_ewald from pair function\n");
+  if (dim != 0 || ptr == nullptr) error->all(FLERR, "Cannot obtain g_ewald from pair function\n");
   pair_g_ewald = *ptr;
-  if (me == 0 && screen) {
+  if (me == 0) {
     // qqrd2e = qqr2e/dielectric; in "force.cpp:181"
-    fprintf(screen, "[ConpGA] g_ewald = %.18f\n", pair_g_ewald);
-    fprintf(screen,
-            "[ConpGA] the Coulomb's constant is %18.12f "
-            "[eneryg_unit/lenght_unit]\n",
-            force->qqrd2e);
+    utils::logmesg(lmp, "[ConpGA] g_ewald = {:.18f}\n", pair_g_ewald);
+    utils::logmesg(lmp,
+                   "[ConpGA] the Coulomb's constant is {:18.12f} "
+                   "[eneryg_unit/lenght_unit]\n",
+                   force->qqrd2e);
   }
 
   /* sort fix group to first */
   if (igroup != 0 && atom->firstgroup == -1) {
-    if (me == 0 and screen) fprintf(screen, "[ConpGA] Resort Group [%s] at first automatically!\n", group->names[igroup]);
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] Resort Group [{}] at the top automatically!\n", group->names[igroup]);
     atom->firstgroup = igroup;
 
     comm->exchange();
@@ -1977,8 +1976,8 @@ void FixConpGA::setup(int vflag)
 
   if (setup_run == 0) {
     localGA_build();
-    if (force->kspace == NULL || pair_flag || minimizer == MIN_PCG) { // Extra Kspace Check
-      localGA_neigh_build();                                          //
+    if (force->kspace == nullptr || pair_flag || minimizer == MIN::PCG) { // Extra Kspace Check
+      localGA_neigh_build();                                              //
     }
   } else {
     // localGA_build();
@@ -1996,7 +1995,7 @@ void FixConpGA::setup(int vflag)
   for (i = 1; i <= n; i++)
   {
     self_GreenCoef[i] = force->pair->single(1, 1, i, i, 0, factor_coul,
-  factor_lj, fforce); if (me == 0 && screen) fprintf(screen, "Fix::Conp:
+  factor_lj, fforce); if (me == 0) utils::logmesg(lmp, "Fix::Conp:
   type:%d, self_GreenCoef: %f\n", i, self_GreenCoef[i]); if(self_GreenCoef[i] !=
   self_GreenCoef[i]) error->all(FLERR, "Invalid self_GreenCoef result, may be
   the wrong pair potential\n");
@@ -2117,7 +2116,7 @@ void FixConpGA::setup(int vflag)
   set_zeros(Ele_Uchem, 0, 3 * Ele_num);
 
   electro->setup();
-  if (firstgroup_flag && comm_recv_arr == NULL) {
+  if (firstgroup_flag && comm_recv_arr == nullptr) {
     comm_recv_arr = electro->setup_comm(all_ghostGA_ind);
   }
   group_check();
@@ -2142,14 +2141,14 @@ void FixConpGA::setup(int vflag)
       Print_INFO();
     }
   }
-  if (tol_style == TOL_REL_B) {
+  if (tol_style == TOL::REL_B) {
     calc_B0(B0_prev);
-    if (B0_store != NULL) std::copy(B0_prev, B0_prev + localGA_num, B0_store);
+    if (B0_store != nullptr) std::copy(B0_prev, B0_prev + localGA_num, B0_store);
   }
 
   // setup_run > 0;
 
-  // tol_style = TOL_MAX_Q;
+  // tol_style = TOL::MAX_Q;
 
   setup_run++;
 
@@ -2183,17 +2182,17 @@ void FixConpGA::setup(int vflag)
     MPI_Allreduce(&clear_force_int, &clear_force_sum, 1, MPI_INT, MPI_SUM, world);
     if (clear_force_sum > 0) {
       clear_force_flag = true;
-      if (me == 0 && screen) fprintf(screen, "[ConpGA] calculate with force clear!\n");
+      if (me == 0) utils::logmesg(lmp, "[ConpGA] calculate with force clear!\n");
     } else {
-      if (me == 0 && screen) fprintf(screen, "[ConpGA] calculate without force clear!\n");
+      if (me == 0) utils::logmesg(lmp, "[ConpGA] calculate without force clear!\n");
     }
   }
   neighbor->ago++;
   pre_force(1);
   neighbor->ago--;
 
-  // FOr MIN_INV, run two times of INV_AAA to increase accuracy.
-  // if (minimizer == MIN_INV) pre_force(1);
+  // FOr MIN::INV, run two times of INV_AAA to increase accuracy.
+  // if (minimizer == MIN::INV) pre_force(1);
   // necessary for force_clear, because the force has been calculated before
   // fix. force_clear();
 
@@ -2232,12 +2231,12 @@ void FixConpGA::setup(int vflag)
 
 void FixConpGA::setup_once()
 {
-  if (tol_style == TOL_REL_B || !GA2GA_flag) {
+  if (tol_style == TOL::REL_B || !GA2GA_flag) {
     memory->create(B0_prev, localGA_num, "FixConp/GA: B0_prev from ");
     memory->create(B0_next, localGA_num, "FixConp/GA: B0_next from ");
     // memory->create(B0_store, localGA_num, "FixConp/GA: B0_next from ");
 
-    if (force_analysis_flag == true && B0_store == NULL) {
+    if (force_analysis_flag == true && B0_store == nullptr) {
       memory->create(B0_store, localGA_num, "FixConp/GA: B0_store from ");
     }
   }
@@ -2246,29 +2245,29 @@ void FixConpGA::setup_once()
   kspace_nn_pppm[0] = force->kspace->nx_pppm;
   kspace_nn_pppm[1] = force->kspace->ny_pppm;
   kspace_nn_pppm[2] = force->kspace->nz_pppm;
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] gewald = %f, grid = %dx%dx%d\n", kspace_g_ewald, kspace_nn_pppm[0], kspace_nn_pppm[1], kspace_nn_pppm[2]);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] gewald = {:f}, grid = {}x{}x{}\n", kspace_g_ewald, kspace_nn_pppm[0], kspace_nn_pppm[1], kspace_nn_pppm[2]);
 
   uself_calc();
-  if (force_analysis_flag && Q_GA_store == NULL) {
+  if (force_analysis_flag && Q_GA_store == nullptr) {
     memory->create(Q_GA_store, localGA_num, "FixConp/GA: Q_GA_store from ");
   }
-  if (minimizer == MIN_INV) {
-    if (me == 0 && screen) fprintf(screen, "[ConpGA] MIN allocate vector\n");
+  if (minimizer == MIN::INV) {
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] MIN allocate vector\n");
     gen_invAAA();
     if (Smatrix_flag == true) make_S_matrix();
 
     memory->create(BBB, totalGA_num, "FixConpGA:BBB");
     memory->create(BBB_localGA, localGA_num, "FixConpGA:BBB");
 
-  } else if (minimizer == MIN_CG) {
+  } else if (minimizer == MIN::CG) {
     // gen_invAAA();
-    if (me == 0 && screen) fprintf(screen, "[ConpGA] CG allocate vector\n");
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] CG allocate vector\n");
 
     p_localGA_vec.reserve(localGA_num);
     ap_localGA_vec.reserve(localGA_num);
     res_localGA_vec.reserve(usedGA_num);
-  } else if (minimizer == MIN_PCG_EX) {
-    if (me == 0 && screen) fprintf(screen, "[ConpGA] PCG-EX allocate vector\n");
+  } else if (minimizer == MIN::PCG_EX) {
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] PCG-EX allocate vector\n");
 
     p_localGA_vec.reserve(localGA_num);
     ap_localGA_vec.reserve(localGA_num);
@@ -2280,29 +2279,29 @@ void FixConpGA::setup_once()
     z_localGA_vec.reserve(localGA_num);
     z_localGA_prv_vec.reserve(localGA_num);
 
-    if (me == 0 && screen) fprintf(screen, "[ConpGA] ppcg_cut for AAA^{-1} = %g\n", ppcg_invAAA_cut);
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] ppcg_cut for AAA^{-1} = {:g}\n", ppcg_invAAA_cut);
 
     gen_invAAA();
     sparsify_invAAA_EX();
-  } else if (minimizer == MIN_PCG) {
-    if (me == 0 && screen) fprintf(screen, "[ConpGA] PCG allocate vector\n");
+  } else if (minimizer == MIN::PCG) {
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] PCG allocate vector\n");
     p_localGA_vec.reserve(localGA_num);
     ap_localGA_vec.reserve(localGA_num);
     res_localGA_vec.reserve(usedGA_num);
     z_localGA_vec.reserve(usedGA_num);
     z_localGA_prv_vec.reserve(usedGA_num);
 #ifndef CONP_NO_DEBUG
-    if (pcg_out != NULL) {
+    if (pcg_out != nullptr) {
       memory->create(q_iters, maxiter + 1, localGA_num, "FixConp/GA: q_iters from charge analysis");
       memory->create(pcg_res_norm, maxiter + 1, 5, "FixConp/GA: pcg_res_norm from charge analysis");
       if (me == 0) fprintf(pcg_out, "# analysis for #GA: %d\n", totalGA_num);
     }
 #endif
-    if (pcg_mat_sel == NORMAL || pcg_mat_sel == FULL) {
+    if (pcg_mat_sel == PCG_MAT::NORMAL || pcg_mat_sel == PCG_MAT::FULL) {
       gen_invAAA();
       // To DO generate Sparse invAAA matrix
       sparsify_invAAA();
-    } else if (pcg_mat_sel == DC) {
+    } else if (pcg_mat_sel == PCG_MAT::DC) {
       // 25600
       if (totalGA_num < sparse_pcg_num)
         gen_DC_invAAA();
@@ -2316,16 +2315,16 @@ void FixConpGA::setup_once()
   }
 
   if (1 || neutrality_flag) {
-    if (minimizer == MIN_CG || minimizer == MIN_PCG) {
+    if (minimizer == MIN::CG || minimizer == MIN::PCG) {
       // Put meanSum_AAA_cg() into uself_calc();
       meanSum_AAA_cg();
     }
   }
-  if (Ele_Cell_Model == CELL_Q_CONTROL) {
+  if (Ele_Cell_Model == CELL::Q) {
     make_ELE_matrix();
   }
 
-  if (minimizer == MIN_PCG && pcg_shift_scale > 0) {
+  if (minimizer == MIN::PCG && pcg_shift_scale > 0) {
     pcg_P_shift();
   }
 }
@@ -2337,8 +2336,8 @@ void FixConpGA::setup_once()
 /*
 void FixConpGA::env_alpha_calc_cg() {
   FUNC_MACRO(0)
-  if(me == 0 and screen)
-    fprintf(screen, "[ConpGA] Calculate environment dependent alpha.\n");
+  if(me == 0)
+    utils::logmesg(lmp, "[ConpGA] Calculate environment dependent alpha.\n");
   int *tag = atom->tag, *type = atom->type;
   int nlocal = atom->nlocal, localSOL_num = nlocal - localGA_num;
   double * const cl_atom = force->pair->cl_atom;
@@ -2495,8 +2494,8 @@ type[i], cl_atom[i], kspace_eatom[i], pe_RML[i]);
 ---------------------------------------------------------------------- */
 /*
 void FixConpGA::group_group_compute(bool to_GA_Flag, const double* const q_set,
-double* pe_out, const double* const pe_RML) { if(me == 0 and screen and
-DEBUG_LOG_LEVEL > 0) fprintf(screen, "[ConpGA] Calculate environment dependent
+double* pe_out, const double* const pe_RML) { if(me == 0 and
+DEBUG_LOG_LEVEL > 0) utils::logmesg(lmp, "[ConpGA] Calculate environment dependent
 alpha.\n"); int *tag = atom->tag, *type = atom->type; int nlocal = atom->nlocal;
   bool iGA_Flags, src_group_Flag;
   double * const cl_atom = force->pair->cl_atom;
@@ -2551,18 +2550,18 @@ void FixConpGA::make_ELE_matrix()
   memory->create(Ele_matrix, Ele_num, Ele_num, "fix_Conp/GA::make_ELE_matrix()::Ele_matrix");
   memory->create(Ele_D_matrix, localGA_num, Ele_num, "fix_Conp/GA::make_ELE_matrix()::Ele_D_matrix");
 
-  if (AAA != NULL) {
+  if (AAA != nullptr) {
     return make_ELE_matrix_direct();
   } else {
     switch (minimizer) {
-      case MIN_CG:
-      case MIN_PCG:
-      case MIN_PCG_EX:
+      case MIN::CG:
+      case MIN::PCG:
+      case MIN::PCG_EX:
         make_ELE_matrix_iterative();
         break;
       default:
-        error->all(FLERR, "meanSum_AAA_cg() only valid for MIN_CG, MIN_PCG or "
-                          "MIN_PPCG methods");
+        error->all(FLERR, "meanSum_AAA_cg() only valid for MIN::CG, MIN::PCG or "
+                          "MIN::PPCG methods");
     }
   }
 }
@@ -2571,7 +2570,7 @@ void FixConpGA::make_ELE_matrix()
 void FixConpGA::make_ELE_matrix_direct()
 {
   FUNC_MACRO(0);
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] Compute the ELE_matrix directly from the inv_E\n");
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] Compute the ELE_matrix directly from the inv_E\n");
   // double** matrix;
   int* totalGA_eleIndex;
   int Ele_num_sqr = Ele_num * Ele_num;
@@ -2609,7 +2608,7 @@ void FixConpGA::make_ELE_matrix_direct()
 void FixConpGA::make_ELE_matrix_iterative()
 {
   FUNC_MACRO(0);
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] Compute the ELE_matrix iteratively\n");
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] Compute the ELE_matrix iteratively\n");
   int n = atom->ntypes, *type = atom->type, Ele_num_sqr = Ele_num * Ele_num;
   int nlocal                  = atom->nlocal;
   double* q                   = atom->q;
@@ -2619,18 +2618,18 @@ void FixConpGA::make_ELE_matrix_iterative()
   q_store.reserve(localGA_num);
   double* const q_store_arr = &q_store.front();
 
-  int tol_style_store      = tol_style;
+  TOL tol_style_store      = tol_style;
   double tolerance_store   = tolerance;
   bool postreat_flag_store = postreat_flag;
 
   postreat_flag = false;
   tolerance     = 1e-20;
-  tol_style     = TOL_MAX_Q;
-  if (me == 0 and screen)
-    fprintf(screen,
-            "[ConpGA] Switch to max_Q criterion to calculate Ele_D_matrix with "
-            "the tolerance of %g\n",
-            tolerance);
+  tol_style     = TOL::MAX_Q;
+  if (me == 0)
+    utils::logmesg(lmp,
+                   "[ConpGA] Switch to max_Q criterion to calculate Ele_D_matrix with "
+                   "the tolerance of {:g}\n",
+                   tolerance);
 
   for (int i = 0; i < localGA_num; i++) {
     int iseq       = GA_seq_arr[i];
@@ -2650,18 +2649,18 @@ void FixConpGA::make_ELE_matrix_iterative()
       ek_atom[iseq] = (localGA_Vext[i] - delta_i);
     }
     switch (minimizer) {
-      case MIN_CG:
+      case MIN::CG:
         update_charge_cg();
         break;
-      case MIN_PCG:
+      case MIN::PCG:
         update_charge_pcg();
         break;
-      case MIN_PCG_EX:
+      case MIN::PCG_EX:
         update_charge_ppcg();
         break;
       default:
-        error->all(FLERR, "make_ELE_matrix_iterative() only valid for MIN_CG, "
-                          "MIN_PCG or MIN_PPCG methods");
+        error->all(FLERR, "make_ELE_matrix_iterative() only valid for MIN::CG, "
+                          "MIN::PCG or MIN::PPCG methods");
     }
     // double res = 0;
     for (int i = 0; i < localGA_num; i++) {
@@ -2697,7 +2696,7 @@ void FixConpGA::make_ELE_matrix_iterative()
 void FixConpGA::make_S_matrix()
 {
   FUNC_MACRO(0);
-  if (me == 0 and screen) fprintf(screen, "[ConpGA] Generate Smat for neutral electrolyte solution\n");
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] Generate Smat for neutral electrolyte solution\n");
   int AAA_disp, i, j;
   double AAA_sumsum_sqrt = sqrt(fabs(inv_AAA_sumsum));
   // where c is c'/sqrt(sum(E))
@@ -2834,7 +2833,7 @@ void FixConpGA::matrix_scatter(double**& mat_all, double**& mat, int N, const in
   int i;
 #ifdef INTEL_MPI
   {
-    if (me == 0 and screen) fprintf(screen, "[ConpGA] Start to redistribute inv_AAA for INTEL MPI!\n");
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] Start to redistribute inv_AAA for INTEL MPI!\n");
     MPI_Request* request = new MPI_Request[nprocs];
     MPI_Status* status   = new MPI_Status[nprocs];
     for (i = nprocs - 1; i > -1; --i) {
@@ -2850,7 +2849,7 @@ void FixConpGA::matrix_scatter(double**& mat_all, double**& mat, int N, const in
     delete[] status;
   }
 #else
-  if (me == 0 and screen) fprintf(screen, "[ConpGA] Start to redistribute pAAA.\n");
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] Start to redistribute pAAA.\n");
   MPI_Scatterv(mat_all[0], size, size_Dipl, MPI_totalN, mat[0], size_EachProc[me], MPI_totalN, 0, world);
 #endif
   MPI_Type_free(&MPI_totalN);
@@ -2863,8 +2862,8 @@ void FixConpGA::matrix_scatter(double**& mat_all, double**& mat, int N, const in
 void FixConpGA::calc_B0(double* B0)
 {
   FUNC_MACRO(0);
-  if (me == 0 && DEBUG_LOG_LEVEL > 0 && screen)
-    fprintf(screen, "[ConpGA] cal_B0: calcualte the potential B0 by the current electrode charge alone with tol_style = %d\n", tol_style);
+  if (me == 0 && DEBUG_LOG_LEVEL > 0)
+    utils::logmesg(lmp, "[ConpGA] cal_B0: calcualte the potential B0 by the current electrode charge alone with tol_style = {}\n", tol_style);
   int i, j, ii, iter;
   int nlocal = atom->nlocal, *type = atom->type, *tag = atom->tag;
   int* GA_seq_arr = &localGA_seq.front();
@@ -2900,7 +2899,7 @@ void FixConpGA::calc_B0(double* B0)
 
   t_begin = clock();
   electro->compute_GAtoGA();
-  electro->calc_GA_potential(1, 1, true);
+  electro->calc_GA_potential(STAT::POT, STAT::POT, SUM_OP::ON);
   update_K_time += double(clock() - t_begin) / CLOCKS_PER_SEC;
 
   for (i = 0; i < localGA_num; i++) {
@@ -2920,7 +2919,7 @@ void FixConpGA::calc_B0(double* B0)
 void FixConpGA::pcg_P_shift()
 {
   int i, j, local_nbr_sum, total_nbr_sum;
-  double total_inva_sum, value;
+  double total_inva_sum;
   double* const inva = &localGA_firstneigh_inva.front();
 
   int inva_size = localGA_firstneigh_inva.capacity();
@@ -2946,14 +2945,14 @@ void FixConpGA::pcg_P_shift()
 
   pcg_shift = (1 / inv_AAA_sumsum - total_inva_sum) / (double(totalGA_num) * totalGA_num - total_nbr_sum);
 
-  if (me == 0 && screen) {
-    value = double(total_nbr_sum) / totalGA_num;
-    fprintf(screen, "[ConpGA] Ave. non-zero per column: %.3f/%d [%.3f%%]\n", value, totalGA_num, value * 100 / totalGA_num);
-    fprintf(screen, "[ConpGA] The shift for sparse P: %.16g (x%f)\n", pcg_shift, pcg_shift_scale);
+  if (me == 0) {
+    double value = double(total_nbr_sum) / totalGA_num;
+    utils::logmesg(lmp, "[ConpGA] Ave. non-zero per column: {:.3f}/{} [{:3f}%%]\n", value, totalGA_num, value * 100 / totalGA_num);
+    utils::logmesg(lmp, "[ConpGA] The shift for sparse P: {:16g} (x{:f})\n", pcg_shift, pcg_shift_scale);
   }
   pcg_shift *= pcg_shift_scale;
 
-  if (pcg_mat_sel == FULL || pcg_mat_sel == NORMAL) {
+  if (pcg_mat_sel == PCG_MAT::FULL || pcg_mat_sel == PCG_MAT::NORMAL) {
     for (i = 0; i < inva_size; ++i) {
       inva[i] -= pcg_shift;
     }
@@ -2982,7 +2981,7 @@ void FixConpGA::gen_DC_invAAA_sparse()
   double factor_coul = 1, factor_lj = -2, fforce = gewald_tune_factor;
   const double* const localGA_GreenCoef = &localGA_GreenCoef_vec.front();
   char info[512];
-  if (screen) fprintf(screen, "[ConpGA] core: %d, neighbor_size_local = %d vs %lu\n", me, neighbor_size_local, localGA_firstneigh.capacity());
+  utils::logmesg(lmp, "[ConpGA] core: {}, neighbor_size_local = {} vs {}\n", me, neighbor_size_local, localGA_firstneigh.capacity());
   localGA_firstneigh_inva.reserve(neighbor_size_local + localGA_num);
   localGA_firstneigh_localIndex.reserve(neighbor_size_local);
 
@@ -3032,15 +3031,15 @@ void FixConpGA::gen_DC_invAAA_sparse()
 
   double N_shift, N;
   N = fit_erfc(gewald_tune_factor, coul, N_shift);
-  if (me == 0 and screen) {
-    fprintf(screen,
-            "[ConpGA] Generate DC PCG matrix with Dampered_alpha = %f, "
-            "compared with PPPM g_ewald = %f\n",
-            gewald_tune_factor, pair_g_ewald);
-    fprintf(screen,
-            "[ConpGA] Using Sparse Routine with N = %f and N_shift = %f with "
-            "size_subAAA = %d\n",
-            N, N_shift, size_subAAA);
+  if (me == 0) {
+    utils::logmesg(lmp,
+                   "[ConpGA] Generate DC PCG matrix with Dampered_alpha = {:f}, "
+                   "compared with PPPM g_ewald = {:f}\n",
+                   gewald_tune_factor, pair_g_ewald);
+    utils::logmesg(lmp,
+                   "[ConpGA] Using Sparse Routine with N = {:f} and N_shift = %f with "
+                   "size_subAAA = %d\n",
+                   N, N_shift, size_subAAA);
   }
 
   t_begin = clock();
@@ -3052,7 +3051,7 @@ void FixConpGA::gen_DC_invAAA_sparse()
   // printf("me = %d; disp = %d/%d;\n", me, spAAA_nonzero_disp[me],
   // AAA_nonzero);
 
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] PCG_cut = %f\n", coul);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] PCG_cut = {:f}\n", coul);
   int local_pair = localGA_num;
   int ghost_pair = 0;
   spAAA_rev_ptr  = spAAA_ptr + spAAA_nonzero[me];
@@ -3152,25 +3151,21 @@ void FixConpGA::gen_DC_invAAA_sparse()
   // printf("core: %d, delta = %d/%d\n", me, spAAA_ptr - spAAA -
   // spAAA_nonzero_disp[me], AAA_nonzero_local); if (spAAA_ptr - (spAAA +
   // spAAA_nonzero_disp[me]) != spAAA_nonzero[me]) {
-  if (screen) fprintf(screen, "[ConpGA] gen_DC_invAAA_sparse() me = %d, nonzero = %lu vs %d\n", me, spAAA_ptr - (spAAA), spAAA_nonzero[me]);
+  utils::logmesg(lmp, "[ConpGA] gen_DC_invAAA_sparse() me = {}, nonzero = {} vs {}\n", me, spAAA_ptr - (spAAA), spAAA_nonzero[me]);
   // }
   t_end = clock();
-  if (me == 0 && screen)
-    fprintf(screen,
-            "[Debug] me = %d, Edge atom [%d/%d], Ghost vs Local = %d[%d] vs %d "
-            "with ghost rate %.3f%%;\n",
-            me, edgeGA_num, localGA_num, ghost_pair, spAAA_nonzero[me], local_pair, 100.0 * ghost_pair / spAAA_nonzero[me]);
-  if (DEBUG_LOG_LEVEL > 0)
-    printf("[Debug] me = %d, Edge atom [%d/%d], Ghost vs Local = %d[%d] vs %d "
-           "with ghost rate %.3f%%;\n",
-           me, edgeGA_num, localGA_num, ghost_pair, spAAA_nonzero[me], local_pair, 100.0 * ghost_pair / spAAA_nonzero[me]);
+  if (me == 0 && DEBUG_LOG_LEVEL > 0)
+    utils::logmesg(lmp,
+                   "[Debug] me = {}, Edge atom [{}/{}], Ghost vs Local = {}[{}] vs {} "
+                   "with ghost rate {:.3f}%%;\n",
+                   me, edgeGA_num, localGA_num, ghost_pair, spAAA_nonzero[me], local_pair, 100.0 * ghost_pair / spAAA_nonzero[me]);
   if (spAAA_rev_ptr - spAAA_ptr == -1) {
     // TODO delete the ptr position check in future
     ; // printf("error structure of input diff = %d\n", spAAA_rev_ptr -
       // spAAA_ptr);
   }
 
-  spAAA_rev_ptr = NULL;
+  spAAA_rev_ptr = nullptr;
   int *num_ghost_pair, *num_ghost_pair_disp;
   memory->create(num_ghost_pair, nprocs, "FixConp/GA: num_ghost_pair @ gen_DC_invAAA_sparse()");
   memory->create(num_ghost_pair_disp, nprocs + 1, "FixConp/GA: num_ghost_pair @ gen_DC_invAAA_sparse()");
@@ -3189,7 +3184,7 @@ void FixConpGA::gen_DC_invAAA_sparse()
   memory->create(spAAA_Ghost, total_ghost_pair, "FixConp/GA: spAAA_Ghost @ gen_DC_invAAA_sparse()");
   // printf("total_ghost_pair = %d\n", total_ghost_pair);
 
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] 01 Elps. Time %.12f for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] 01 Elps. Time {:.12f} for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
   /*
   for (iproc = 0; iproc < nprocs; ++iproc) {
     AAA_disp = spAAA_nonzero_disp[iproc];
@@ -3206,12 +3201,12 @@ void FixConpGA::gen_DC_invAAA_sparse()
   MPI_Type_free(&MPI_spMAT);
 
   t_end = clock();
-  if (me == 0 && screen) {
-    fprintf(screen, "[ConpGA] 02 Elps. Time %.12f for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
-    fprintf(screen,
-            "[ConpGA] The sparse rate of Ewald interaction for short-ranged is "
-            "%.12f\n",
-            (double)(AAA_nonzero) / ((double)(totalGA_num)*totalGA_num));
+  if (me == 0) {
+    utils::logmesg(lmp, "[ConpGA] 02 Elps. Time {:.12f} for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
+    utils::logmesg(lmp,
+                   "[ConpGA] The sparse rate of Ewald interaction for short-ranged is "
+                   "{:.12f}\n",
+                   (double)(AAA_nonzero) / ((double)(totalGA_num)*totalGA_num));
   }
 
   AAA_disp = localGA_EachProc_Dipl[me];
@@ -3223,7 +3218,7 @@ void FixConpGA::gen_DC_invAAA_sparse()
   free(spAAA_Ghost);
   free(spAAA_nonzero);
   free(spAAA_nonzero_disp);
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] size of spAAA at CPU:0 is %ld\n", spMat.size());
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] size of spAAA at CPU:0 is {}\n", spMat.size());
 
   // memory->create(AAA, totalGA_num, totalGA_num, "FixConp/GA: AAA from
   // gen_pseudo_invAAA_select");
@@ -3234,23 +3229,23 @@ void FixConpGA::gen_DC_invAAA_sparse()
   double** AAA_L1;
   bool* AAA_L1_Flag;
   size_t idx_AAA, idx_L1, idx_L2, AAA_L1_nonzero = 0;
-  // if (me == 0 && screen) fprintf(screen, "size_AAA = %ld; count_subAAA
+  // if (me == 0) utils::logmesg(lmp, "size_AAA = %ld; count_subAAA
   // %ld\n", size_subAAA, count_subAAA); memory->create(AAA_L1, count_subAAA,
   // "FixConp/GA: AAA_level1 from gen_pseudo_invAAA_select");
 
   if (totalGA_num < size_map) {
-    if (me == 0 && screen) fprintf(screen, "[ConpGA] allocate AAA_L1 matrix for direct I/O.\n");
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] allocate AAA_L1 matrix for direct I/O.\n");
     AAA_L1      = (double**)malloc(count_subAAA * sizeof(double*));
     AAA_L1_Flag = (bool*)malloc(count_subAAA * sizeof(bool));
     for (i = 0; i < count_subAAA; i++) {
       AAA_L1_Flag[i] = false;
     }
   } else {
-    if (me == 0 && screen) fprintf(screen, "[ConpGA] using STL::MAP for indirect I/O.\n");
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] using STL::MAP for indirect I/O.\n");
   }
 
   t_end = clock();
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] 03 Elps. Time %.12f for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] 03 Elps. Time {:.12f} for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
 
   int** mat_struct = (int**)malloc(sizeof(int*) * localGA_num);
   int *row, *row_size = (int*)malloc(sizeof(int) * localGA_num);
@@ -3297,7 +3292,7 @@ void FixConpGA::gen_DC_invAAA_sparse()
     }
   } // i
   t_end = clock();
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] 03.1 Elps. Time %.12f for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] 03.1 Elps. Time {:.12f} for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
 
   // memset(AAA0, 0.0, sizeof(double)*totalGA_num*totalGA_num);
 
@@ -3321,12 +3316,12 @@ void FixConpGA::gen_DC_invAAA_sparse()
   }
 
   t_end = clock();
-  if (me == 0 && screen) {
-    fprintf(screen,
-            "[ConpGA] 04 Elps. Time %.12f for short-ranged interaction by "
-            "initiate a zero matrix\n",
-            double(t_end - t_begin) / CLOCKS_PER_SEC);
-    fprintf(screen, "[ConpGA] subAAA_size = %d, Final sparse rate = %.12f\n", size_subAAA, (double)AAA_L1_nonzero / count_subAAA);
+  if (me == 0) {
+    utils::logmesg(lmp,
+                   "[ConpGA] 04 Elps. Time {:.12f} for short-ranged interaction by "
+                   "initiate a zero matrix\n",
+                   double(t_end - t_begin) / CLOCKS_PER_SEC);
+    utils::logmesg(lmp, "[ConpGA] subAAA_size = {}, Final sparse rate = {:.12f}\n", size_subAAA, (double)AAA_L1_nonzero / count_subAAA);
   }
 
   std::vector<double> DDD_vec;
@@ -3420,11 +3415,11 @@ void FixConpGA::gen_DC_invAAA_sparse()
       printf("\n");
     }
     */
-    if (i % 100 == 0 && me == 0 && screen) {
-      fprintf(screen,
-              "atom %d/%d, Loops [%d/%d] DDD[0,0] = %f, DDD[0,(1:2)/%d] = "
-              "(%f,%f), Elps. Time %.3f[3]\n",
-              i, localGA_num, k, maxiter, DDD[0], n, DDD[1], DDD[2], double(t_end - t_begin) / CLOCKS_PER_SEC);
+    if (i % 100 == 0 && me == 0) {
+      utils::logmesg(lmp,
+                     "atom {}/{}, Loops [{}/{}] DDD[0,0] = {:f}, DDD[0,(1:2)/{}] = "
+                     "({:f},{:f}), Elps. Time {:.3f}[3]\n",
+                     i, localGA_num, k, maxiter, DDD[0], n, DDD[1], DDD[2], double(t_end - t_begin) / CLOCKS_PER_SEC);
     }
 
     tag2row_index.clear();
@@ -3484,7 +3479,7 @@ void FixConpGA::gen_DC_invAAA_sparse()
   }   // i = 0 ~ localGA_num
 
   t_end = clock();
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] 05 Elps. Time %.12f for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] 05 Elps. Time {:.12f} for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
 
   if (totalGA_num < size_map) {
     for (i = 0; i < count_subAAA; i++) {
@@ -3539,7 +3534,7 @@ void FixConpGA::gen_DC_invAAA()
     AAA0[i] = 0.0;
   }
 
-  if (screen) fprintf(screen, "[ConpGA] core: %d, neighbor_size_local = %d vs %lu\n", me, neighbor_size_local, localGA_firstneigh.capacity());
+  utils::logmesg(lmp, "[ConpGA] core: {}, neighbor_size_local = {} vs {}\n", me, neighbor_size_local, localGA_firstneigh.capacity());
 
   const int* const localGA_seq_arr = &localGA_seq.front();
   const int* const localGA_tag_arr = &localGA_tag.front();
@@ -3566,15 +3561,15 @@ void FixConpGA::gen_DC_invAAA()
 
   double **AAA_me = AAA + AAA_disp, N_shift, N;
   N               = fit_erfc(gewald_tune_factor, coul, N_shift);
-  if (me == 0 and screen) {
-    fprintf(screen,
-            "[ConpGA] Generate DC P-matrix with Dampered_alpha = %f, compared "
-            "with PPPM g_ewald = %f\n",
-            gewald_tune_factor, pair_g_ewald);
-    fprintf(screen,
-            "[ConpGA] Generate DC P-matrix using a Full matrix N = %f and "
-            "N_shift = %f\n",
-            N, N_shift);
+  if (me == 0) {
+    utils::logmesg(lmp,
+                   "[ConpGA] Generate DC P-matrix with Dampered_alpha = {:f}, compared "
+                   "with PPPM g_ewald = {:f}\n",
+                   gewald_tune_factor, pair_g_ewald);
+    utils::logmesg(lmp,
+                   "[ConpGA] Generate DC P-matrix using a Full matrix N = {:f} and "
+                   "N_shift = {:f}\n",
+                   N, N_shift);
   }
 
   t_begin = clock();
@@ -3627,7 +3622,7 @@ void FixConpGA::gen_DC_invAAA()
   }                                                           // i
 
   t_end = clock();
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] 01 Elps. Time %.12f for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] 01 Elps. Time {:.12f} for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
 
   AAA_nonzero_local += localGA_num;
   MPI_Allreduce(&AAA_nonzero_local, &AAA_nonzero, 1, MPI_INT, MPI_SUM, world);
@@ -3639,7 +3634,7 @@ void FixConpGA::gen_DC_invAAA()
   }
 
   t_end = clock();
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] 02 Elps. Time %.12f for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] 02 Elps. Time {:.12f} for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
 
   /*
   for (k = 0; k < totalGA_num * totalGA_num; ++k) {
@@ -3674,7 +3669,7 @@ void FixConpGA::gen_DC_invAAA()
   */
 
   t_end = clock();
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] 03 Elps. Time %.12f for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] 03 Elps. Time {:.12f} for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
 
   int** mat_struct = (int**)malloc(sizeof(int*) * localGA_num);
   int *row, *row_size = (int*)malloc(sizeof(int) * localGA_num);
@@ -3717,7 +3712,7 @@ void FixConpGA::gen_DC_invAAA()
   } // i
 
   t_end = clock();
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] 04 Elps. Time %.12f for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] 04 Elps. Time {:.12f} for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
 
   // neighbor_size = 2*AAA_nonzero/totalGA_num + max_neighbor;
   // neighbor_size *= 2;
@@ -3772,8 +3767,8 @@ void FixConpGA::gen_DC_invAAA()
 
     }
 
-    if(screen && i%100 == 0 && me == 0) {
-      fprintf(screen, "atom %d/%d, Loops [%d/%d] DDD[0,0] = %f, DDD[0,(1:2)/%d]
+    if(i%100 == 0 && me == 0) {
+      utils::logmesg(lmp, "atom %d/%d, Loops [%d/%d] DDD[0,0] = %f, DDD[0,(1:2)/%d]
     = (%f,%f), Elps. Time %.3f[3]\n", i,  localGA_num, k, maxiter, DDD[0], n,
     DDD[1], DDD[2], double(t_end - t_begin) / CLOCKS_PER_SEC);
     }
@@ -3832,7 +3827,7 @@ void FixConpGA::gen_DC_invAAA()
   }   // i = 0 ~ localGA_num
   memory->destroy(AAA);
   t_end = clock();
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] 05 Elps. Time %.12f for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] 05 Elps. Time {:.12f} for short-ranged interaction\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
 
   for (i = 0; i < localGA_num; i++) {
     free(mat_struct[i]);
@@ -4088,11 +4083,11 @@ void FixConpGA::sparsify_invAAA_EX()
 
       if (DEBUG_LOG_LEVEL > 0) {
         value = cal_1D_std(1, ptr_AAA + i_split[i - 1], ptr_AAA + i_split[i]);
-        if (me == 0 && screen)
-          fprintf(screen,
-                  "block[%d], range: %d-%d[%d], value = %.12g, ave = %.12g, "
-                  "sqr = %.12g\n",
-                  i, i_split[i - 1], i_split[i], i_split[i] - i_split[i - 1], split[i - 1], block_ave_value[i - 1], value);
+        if (me == 0)
+          utils::logmesg(lmp,
+                         "block[{}], range: {}-{}[{}], value = {:.12g}, ave = {:.12g}, "
+                         "sqr = {:.12g}\n",
+                         i, i_split[i - 1], i_split[i], i_split[i] - i_split[i - 1], split[i - 1], block_ave_value[i - 1], value);
       }
       block_ave_value[i - 1] *= pcg_shift_scale;
     }
@@ -4168,10 +4163,10 @@ void FixConpGA::sparsify_invAAA_EX()
 
   pcg_shift = total_shift / (double(totalGA_num) * totalGA_num - total_nbr_sum);
 
-  if (me == 0 && screen) {
+  if (me == 0) {
     value = double(total_nbr_sum) / totalGA_num;
-    fprintf(screen, "[ConpGA] Ave. non-zero per column: %.3f/%d [%.3f%%]\n", value, totalGA_num, value * 100 / totalGA_num);
-    fprintf(screen, "[ConpGA] The shift for sparse P: %.16g (x%f)\n", pcg_shift, pcg_shift_scale);
+    utils::logmesg(lmp, "[ConpGA] Ave. non-zero per column: {:.3f}/{} [{:.3f}%%]\n", value, totalGA_num, value * 100 / totalGA_num);
+    utils::logmesg(lmp, "[ConpGA] The shift for sparse P: {:.16g} (x{:.f})\n", pcg_shift, pcg_shift_scale);
   }
   memory->destroy(split);
 
@@ -4255,8 +4250,8 @@ double FixConpGA::quadratic_fit(double* x, double* y)
 
   dgesv_(&n, &ione, xMat, &n, IPIV, yMat, &n, &INFO);
   if (INFO != 0) {
-    if (me == 0 && screen) fprintf(screen, "x = %.18g %.18g %.18g\n", x[0], x[1], x[2]);
-    if (me == 0 && screen) fprintf(screen, "y = %g %g %g\n", y[0], y[1], y[2]);
+    if (me == 0) utils::logmesg(lmp, "x = {:.18g} {:.18g} {:.18g}\n", x[0], x[1], x[2]);
+    if (me == 0) utils::logmesg(lmp, "y = {:.18g} {:.18g} {:.18g}\n", y[0], y[1], y[2]);
     error->all(FLERR, "quadratic_fit() cannot solve the 3x3 matrix");
   }
   // printf("y = %g %g %g\n, INFO = %d\n", y[0], y[1], y[2], INFO);
@@ -4530,11 +4525,11 @@ void FixConpGA::sparsify_invAAA()
   neighbor_size += totalGA_num;
 
   double average_num = double(neighbor_size) / totalGA_num;
-  if (me == 0 and screen)
-    fprintf(screen,
-            "[ConpGA]  CPU[%d]:Total size: %d, Ave. neighbor number: "
-            "%10.7f/%d, Sparsity:%3.2f%%\n",
-            me, neighbor_size, average_num, totalGA_num, average_num * 100 / double(totalGA_num));
+  if (me == 0)
+    utils::logmesg(lmp,
+                   "[ConpGA]  CPU[{}]:Total size: {}, Ave. neighbor number: "
+                   "{:10.7f}/{}, Sparsity:{:3.2f}%%\n",
+                   me, neighbor_size, average_num, totalGA_num, average_num * 100 / double(totalGA_num));
 
   if (me == work_me && DEBUG_LOG_LEVEL > 1) {
     for (i = 0; i < localGA_num; i++) {
@@ -4605,7 +4600,7 @@ void FixConpGA::gen_invAAA()
 void FixConpGA::uself_calc()
 {
   FUNC_MACRO(0);
-  if (force->kspace == NULL) { // Extra Kspace Check
+  if (force->kspace == nullptr) { // Extra Kspace Check
     Xi_self = 0;
     return;
   }
@@ -4625,9 +4620,9 @@ void FixConpGA::uself_calc()
   for (iproc = 0; iproc < procs; iproc++) {
     if (localGA_EachProc_Dipl[iproc] <= Xi_self_index && Xi_self_index < localGA_EachProc_Dipl[iproc] + localGA_EachProc[iproc]) break;
   }
-  if (me == 0 && screen)
-    fprintf(screen, "[ConpGA] Xi_self_index = %d/%d @ Proc. #%d: [%d<-%d]\n", Xi_self_index, totalGA_num, iproc, localGA_EachProc_Dipl[iproc],
-            localGA_EachProc_Dipl[iproc] + localGA_EachProc[iproc] - 1);
+  if (me == 0)
+    utils::logmesg(lmp, "[ConpGA] Xi_self_index = {}/{} @ Proc. #{}: [{}<-{}]\n", Xi_self_index, totalGA_num, iproc, localGA_EachProc_Dipl[iproc],
+                   localGA_EachProc_Dipl[iproc] + localGA_EachProc[iproc] - 1);
 
   if (me == iproc) {
     ilocalseq    = localGA_seq[Xi_self_index - localGA_EachProc_Dipl[iproc]];
@@ -4643,7 +4638,7 @@ void FixConpGA::uself_calc()
   }
   MPI_Bcast(&Xi_self, 1, MPI_DOUBLE, iproc, world);
   MPI_Barrier(world);
-  if (me == 0 and screen) fprintf(screen, "[ConpGA] Ewald Xi_self = %.20f [Energ/Charge^2]\n", Xi_self);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] Ewald Xi_self = {:.18g} [Energ/Charge^2]\n", Xi_self);
 
   // restore the charge on GA electrode
   for (i = 0; i < localGA_num; i++) {
@@ -4670,7 +4665,7 @@ void FixConpGA::uself_calc()
 void FixConpGA::setup_AAA_Direct()
 {
   FUNC_MACRO(0)
-  if (me == 0 and screen) fprintf(screen, "[ConpGA] Build AAA matrix from the direct pairwise interaction.\n");
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] Build AAA matrix from the direct pairwise interaction.\n");
   int *tag = atom->tag, *type = atom->type;
   // int nlocal = atom->nlocal;
 
@@ -4852,7 +4847,7 @@ int FixConpGA::inv_AAA_SCALAPACK(double* A, MKL_INT n)
   } else
     nb = mb = scalapack_nb;
 
-  if (me == 0 and screen) fprintf(screen, "[ConpGA] SCALAPACK nprow x npcol = %d x %d with block size = %dx%d\n", nprow, npcol, mb, nb);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] SCALAPACK nprow x npcol = {} x {} with block size = {} x {}\n", nprow, npcol, mb, nb);
 
   MKL_INT mloc = numroc_(&m, &mb, &myrow, &izero, &nprow); // My proc -> row of local A
   MKL_INT nloc = numroc_(&n, &nb, &mycol, &izero, &npcol); // My proc -> col of local A
@@ -4901,13 +4896,13 @@ int FixConpGA::inv_AAA_SCALAPACK(double* A, MKL_INT n)
 
   lwork  = (MKL_INT)(wkopt[0]) + 1;
   liwork = iwkopt[0];
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] SCALAPACK with lwork = %d, liwork = %d\n", lwork, liwork);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] SCALAPACK with lwork = {}, liwork = {}\n", lwork, liwork);
   if (lwork <= 0 || lwork > max_lwork) {
-    if (me == 0 && screen) fprintf(screen, "[ConpGA] SCALAPACK with reseting lwork as %d\n", max_lwork);
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] SCALAPACK with reseting lwork as {}\n", max_lwork);
     lwork = max_lwork;
   }
   if (liwork <= 0 || lwork > max_liwork) {
-    if (me == 0 && screen) fprintf(screen, "[ConpGA] SCALAPACK with reseting liwork as %d\n", max_liwork);
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] SCALAPACK with reseting liwork as {}\n", max_liwork);
     liwork = max_liwork;
   }
 
@@ -4934,7 +4929,7 @@ int FixConpGA::inv_AAA_SCALAPACK(double* A, MKL_INT n)
   Cblacs_gridexit(ictxt);
 
   total_time += double(clock() - t_begin_A) / CLOCKS_PER_SEC;
-  if (me == 0 && screen && DEBUG_LOG_LEVEL > -1) fprintf(screen, "add_time = %f, inv_time = %f, total_time = %f\n", add_time, inv_time, total_time);
+  if (me == 0 && DEBUG_LOG_LEVEL > -1) utils::logmesg(lmp, "add_time = {:f}, inv_time = {:f}, total_time = {:f}\n", add_time, inv_time, total_time);
   return nb;
 }
 #endif
@@ -4982,10 +4977,10 @@ void FixConpGA::classic_compute_AAA()
 
   double* AAA_sum;
   test_charge += qsum;
-  if (me == 0 && screen) {
-    fprintf(screen, "[ConpGA] \\frac{\\pi}{\\eta^2 V} = %f [energy unit]\n", self_g_ewald_CONST);
-    fprintf(screen, "[ConpGA] \\tidle{Q}    Mat: q_ii = %f = %f + %f, q_ij = %f\n", test_charge, qsum, (double)(totalGA_num - 1), -1.0);
-    fprintf(screen, "[ConpGA] \\tidle{Q}^-1 Mat: q_ii^-1 = %.16f, q_ij^-1 = %.16f\n", CCC_a + CCC_b, CCC_b);
+  if (me == 0) {
+    utils::logmesg(lmp, "[ConpGA] \\frac{\\pi}{\\eta^2 V} = {:f} [energy unit]\n", self_g_ewald_CONST);
+    utils::logmesg(lmp, "[ConpGA] \\tidle{Q}    Mat: q_ii = {:f} = {:f} + {:f}, q_ij = {:f}\n", test_charge, qsum, (double)(totalGA_num - 1), -1.0);
+    utils::logmesg(lmp, "[ConpGA] \\tidle{Q}^-1 Mat: q_ii^-1 = {:.16f}, q_ij^-1 = {:.16f}\n", CCC_a + CCC_b, CCC_b);
   }
 
   istart_ptr = &localGA_seq.front();
@@ -5005,8 +5000,8 @@ void FixConpGA::classic_compute_AAA()
   double* const ek_atom          = electro->ek_atom();
   const int* const size_EachProc = &localGA_EachProc.front();
   const int* const size_Dipl     = &localGA_EachProc_Dipl.front();
-  int *sizeSOL_EachProc = NULL, *sizeSOL_Dipl = NULL;
-  double **Umat = NULL, *Umat_1D = NULL, **Umat_Global;
+  int *sizeSOL_EachProc = nullptr, *sizeSOL_Dipl = nullptr;
+  double **Umat = nullptr, *Umat_1D = nullptr, **Umat_Global;
   double* pe_RML;
 
   /*
@@ -5100,7 +5095,7 @@ void FixConpGA::classic_compute_AAA()
   }
 
   int AAA_disp = localGA_EachProc_Dipl[me];
-  if (screen && me == 0) fprintf(screen, "[ConpGA] Generate AAA matrix:\n");
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] Generate AAA matrix:\n");
   int itotalGA = 0;
   int* tag     = atom->tag;
 
@@ -5114,9 +5109,9 @@ void FixConpGA::classic_compute_AAA()
       itestGA_tag = totalGA_tag[itotalGA];
       if (printf_flag % printf_loops == 0) {
         t_end = clock();
-        if (me == 0 and screen)
-          fprintf(screen, "progress = %.2f%% - %d/%d, time elapsed: %8.2f[s]\n", (float)(itotalGA + 1) / totalGA_num * 100, itotalGA + 1, totalGA_num,
-                  double(t_end - t_begin) / CLOCKS_PER_SEC);
+        if (me == 0)
+          utils::logmesg(lmp, "progress = {:.2f}%% - {}/{}, time elapsed: {:8.2f}[s]\n", (float)(itotalGA + 1) / totalGA_num * 100, itotalGA + 1, totalGA_num,
+                         double(t_end - t_begin) / CLOCKS_PER_SEC);
       }
       printf_flag++;
 
@@ -5212,7 +5207,7 @@ void FixConpGA::classic_compute_AAA()
   }
 
   t_end = clock();
-  if (me == 0 and screen) fprintf(screen, "[ConpGA] End of AAA Matrix calulation, Total elapsed: %8.6f[s]\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] End of AAA Matrix calulation, Total elapsed: {:8.6f}[s]\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
 
   map<int, int> tag2GA_index;
   MAP_RESERVE(tag2GA_index, totalGA_num);
@@ -5220,7 +5215,7 @@ void FixConpGA::classic_compute_AAA()
     tag2GA_index[totalGA_tag[i]] = i;
   }
 
-  if (me == 0 and screen) fprintf(screen, "[ConpGA] Start of AAA Matrix calulation by AAA = inv(CCC)*BBB\n");
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] Start of AAA Matrix calulation by AAA = inv(CCC)*BBB\n");
 
   memory->create(AAA_sum, localGA_num, "FixConp/GA: AAA_sum");
 
@@ -5312,7 +5307,7 @@ void FixConpGA::classic_compute_AAA()
     if(me == 0)
     write_mat(env_alpha_arr, localGA_num, "env_alpha.mat");
 
-    Umat_Global = NULL;
+    Umat_Global = nullptr;
   }
   */
 
@@ -5331,7 +5326,7 @@ void FixConpGA::inverse(double** mat_all, int N, double**& mat_local, int localN
 {
 #ifdef SCALAPACK
   if (N > scalapack_num && nprocs > 0) {
-    if (me == 0 and screen) fprintf(screen, "[ConpGA] Inverse AAA via SCALAPACK routine, %d > %d !\n", N, scalapack_num);
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] Inverse AAA via SCALAPACK routine, {} > {} !\n", N, scalapack_num);
     memory->destroy(mat_local);
     inv_AAA_SCALAPACK(mat_all[0], N);
     if (localN > 0) memory->create(mat_local, localN, N, "inverse:mat_local");
@@ -5341,7 +5336,7 @@ void FixConpGA::inverse(double** mat_all, int N, double**& mat_local, int localN
 #endif
   } else {
     /* -------- DO LAPACK ------- */
-    if (me == 0 and screen) fprintf(screen, "[ConpGA] Inverse AAA via LAPACK routine, %d < %d !\n", N, scalapack_num);
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] Inverse AAA via LAPACK routine, {} < {} !\n", N, scalapack_num);
     if (me == 0) inv_AAA_LAPACK(mat_all[0], N);
   }
 }
@@ -5355,9 +5350,9 @@ void FixConpGA::setup_AAA()
   time_t t_begin_AAA = clock();
 #ifdef SCALAPACK
   if (totalGA_num > scalapack_num) {
-    if (me == 0 && screen) fprintf(screen, "[ConpGA] inverse the Ewald interaction matrix using SCALAPACK\n");
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] inverse the Ewald interaction matrix using SCALAPACK\n");
   } else {
-    if (me == 0 && screen) fprintf(screen, "[ConpGA] inverse the Ewald interaction matrix using LAPACK\n");
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] inverse the Ewald interaction matrix using LAPACK\n");
   }
 #endif
   /* ---------- allocate the AAA matrix -----*/
@@ -5369,19 +5364,19 @@ void FixConpGA::setup_AAA()
   else
     memory->create(AAA, AAA_len, totalGA_num, "FixConp/GA: AAA_tmp");
 
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] allocate AAA_Global strucute for %8.6f[s]!\n", double(clock() - t_begin_AAA) / CLOCKS_PER_SEC);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] allocate AAA_Global strucute for {:8.6f}[s]!\n", double(clock() - t_begin_AAA) / CLOCKS_PER_SEC);
 
   // for electro compute using the intermediate Green's function matrix
   if (pair_flag && electro->is_compute_AAA()) {
-    if (me == 0 && screen) fprintf(screen, "[ConpGA] Compute the Ewald matrix via %s\n", electro->type_name());
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] Compute the Ewald matrix via {}\n", electro->type_name());
     electro->compute_AAA(AAA);
   } else {
-    if (me == 0 && screen)
-      fprintf(screen, "[ConpGA] Compute the Ewald matrix via the default N "
-                      "times Ewald summation.\n");
+    if (me == 0)
+      utils::logmesg(lmp, "[ConpGA] Compute the Ewald matrix via the default N "
+                          "times Ewald summation.\n");
     classic_compute_AAA();
   }
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] Compute Ewald matrix for %8.6f[s]!\n", double(clock() - t_begin_AAA) / CLOCKS_PER_SEC);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] Compute Ewald matrix for {:8.6f}[s]!\n", double(clock() - t_begin_AAA) / CLOCKS_PER_SEC);
 
   double *q = atom->q, **AAA_Global;
   MPI_Datatype MPI_totalGA;
@@ -5402,7 +5397,7 @@ void FixConpGA::setup_AAA()
   inverse(AAA_Global, totalGA_num, AAA, localGA_num);
 
   t_end = clock();
-  if (me == 0) fprintf(screen, "[ConpGA] Matrix Inversion for elapsed: %8.6f[s]\n", double(t_end - t_begin_AAA) / CLOCKS_PER_SEC);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] Matrix Inversion for elapsed: %8.6f[s]\n", double(t_end - t_begin_AAA) / CLOCKS_PER_SEC);
 
   if (me == 0) make_symmetric_matrix(symmetry_flag, totalGA_num, AAA_Global);
   MPI_Barrier(world);
@@ -5411,11 +5406,11 @@ void FixConpGA::setup_AAA()
   memory->destroy(AAA_Global);
 
   t_end = clock();
-  if (me == 0 and screen)
-    fprintf(screen,
-            "[ConpGA] MPI communication to distribute matrix, Total elapsed: "
-            "%8.6f[s]\n",
-            double(t_end - t_begin_AAA) / CLOCKS_PER_SEC);
+  if (me == 0)
+    utils::logmesg(lmp,
+                   "[ConpGA] MPI communication to distribute matrix, Total elapsed: "
+                   "{:8.6f}[s]\n",
+                   double(t_end - t_begin_AAA) / CLOCKS_PER_SEC);
 
   // Gather to root AAA_Global
   meanSum_AAA();
@@ -5424,7 +5419,7 @@ void FixConpGA::setup_AAA()
   // memory->destroy(total_Self_Energy);
   // memory->destroy(local_Self_Energy);
   force_clear();
-  if (me == 0 and screen) fprintf(screen, "[ConpGA] End of Ewald Matrix calulation, Total elapsed: %8.6f[s]\n", double(t_end - t_begin_AAA) / CLOCKS_PER_SEC);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] End of Ewald Matrix calulation, Total elapsed: {:8.6f}[s]\n", double(t_end - t_begin_AAA) / CLOCKS_PER_SEC);
 }
 
 void FixConpGA::group_check()
@@ -5444,12 +5439,12 @@ void FixConpGA::group_check()
   }
 }
 
-void FixConpGA::make_symmetric_matrix(int flag, int n, double** mat)
+void FixConpGA::make_symmetric_matrix(SYM flag, int n, double** mat)
 {
   FUNC_MACRO(0);
   int i, j;
   double value, value_i, value_j;
-  if (flag == SYM_MEAN) {
+  if (flag == SYM::MEAN) {
     for (i = 0; i < n; ++i) {
       for (j = 0; j < i; ++j) {
         value_i = mat[i][j];
@@ -5461,7 +5456,7 @@ void FixConpGA::make_symmetric_matrix(int flag, int n, double** mat)
         mat[i][j] = mat[j][i] = value;
       }
     }
-  } else if (flag == SYM_SQRT) {
+  } else if (flag == SYM::SQRT) {
     for (i = 0; i < n; ++i) {
       for (j = 0; j < i; ++j) {
         value_i = mat[i][j];
@@ -5474,7 +5469,7 @@ void FixConpGA::make_symmetric_matrix(int flag, int n, double** mat)
         mat[i][j] = mat[j][i] = value;
       }
     }
-  } else if (flag == SYM_TRAN) {
+  } else if (flag == SYM::TRAN) {
     for (i = 0; i < n; ++i) {
       for (j = 0; j < i; ++j) {
         value_i   = mat[i][j];
@@ -5521,7 +5516,7 @@ void FixConpGA::update_charge_ppcg()
 #ifndef CONP_NO_DEBUG
       qsum_store = electro->calc_qsum();
       if (fabs(qsum_store) > 1e-11)
-        if (me == 0) fprintf(screen, "invalid neutrality state of qsum = %.10f\n", qsum_store);
+        if (me == 0) utils::logmesg(lmp, "invalid neutrality state of qsum = %.10f\n", qsum_store);
 #endif
     }
   }
@@ -5560,7 +5555,7 @@ void FixConpGA::update_charge_ppcg()
 
   local_res_sum = 0;
 
-  if (tol_style == TOL_REL_B) {
+  if (tol_style == TOL::REL_B) {
     PE_ij_local = 0;
     for (i = 0; i < localGA_num; i++) {
       iseq  = GA_seq_arr[i];
@@ -5575,7 +5570,7 @@ void FixConpGA::update_charge_ppcg()
 
       res_localGA[i] = localGA_Vext[i] - value;
       local_res_sum += res_localGA[i];
-      // if (me == 0 and screen) fprintf(screen, "Seq: %d, Charge %f, U_ext
+      // if (me == 0) utils::logmesg(lmp, "Seq: %d, Charge %f, U_ext
       // %f\n", iseq, qtmp, res_localGA[i]);
     }
     MPI_Allreduce(&PE_ij_local, &PE_ij_total, 1, MPI_DOUBLE, MPI_SUM, world);
@@ -5630,9 +5625,9 @@ void FixConpGA::update_charge_ppcg()
   MPI_Allreduce(&ptap_local, &ptap_total, 1, MPI_DOUBLE, MPI_SUM, world);
 
 #ifndef CONP_NO_DEBUG
-  if (me == work_me && screen) {
+  if (me == work_me) {
     t_end = clock();
-    fprintf(screen, "Iteration 0: z*r = %20.18g, r*r = %20.18g, z*z = %20.18g\n", resnorm_total, next_resnorm_total, ptap_total);
+    utils::logmesg(lmp, "Iteration 0: z*r = {:20.18g}, r*r = {:20.18g}, z*z = {:20.18g}\n", resnorm_total, next_resnorm_total, ptap_total);
   }
 #endif
 
@@ -5650,7 +5645,7 @@ void FixConpGA::update_charge_ppcg()
 
     t_begin = clock();
     electro->compute_GAtoGA();
-    electro->calc_GA_potential(0, 0, 2);
+    electro->calc_GA_potential(STAT::E, STAT::E, SUM_OP::BOTH);
     update_K_time += double(clock() - t_begin) / CLOCKS_PER_SEC;
 
     ptap_local = 0;
@@ -5673,7 +5668,7 @@ void FixConpGA::update_charge_ppcg()
     // printf("alpha = %f, resnorm_total = %f, ptap_total = %f\n", alpha,
     // resnorm_total, ptap_total);
     local_res_sum = 0;
-    if (tol_style == TOL_REL_B) {
+    if (tol_style == TOL::REL_B) {
       PE_ij_local = 0;
       for (i = 0; i < localGA_num; i++) {
         iseq     = GA_seq_arr[i];
@@ -5696,17 +5691,17 @@ void FixConpGA::update_charge_ppcg()
         qGA_incr = qlocalGA_incr_sum;
         MPI_Reduce(&qGA_incr, &qGA_incr_sum, 1, MPI_DOUBLE, MPI_SUM, 0, world);
 #ifndef CONP_NO_DEBUG
-        if (me == 0 && DEBUG_LOG_LEVEL > 0 && screen) {
+        if (me == 0 && DEBUG_LOG_LEVEL > 0) {
           t_end = clock();
-          fprintf(screen,
-                  "***** Converged at iteration %d rel_B0 * q = %g netcharge = "
-                  "%g Total Elps. %8.2f[s]\n",
-                  iter, dPE_ij_total / PE_ij_total, qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
+          utils::logmesg(lmp,
+                         "***** Converged at iteration {} rel_B0 * q = {:g} netcharge = "
+                         "{:g} Total Elps. {:8.2g}[s]\n",
+                         iter, dPE_ij_total / PE_ij_total, qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
         }
 #endif
         break;
       } // if
-    } else if (tol_style == TOL_RES) {
+    } else if (tol_style == TOL::RES) {
       printf("start res\n");
       for (i = 0; i < localGA_num; i++) {
         iseq     = GA_seq_arr[i];
@@ -5718,7 +5713,7 @@ void FixConpGA::update_charge_ppcg()
       }
       printf("end res\n");
 
-    } else if (tol_style == TOL_MAX_Q) {
+    } else if (tol_style == TOL::MAX_Q) {
       q_max_local = 0;
       for (i = 0; i < localGA_num; i++) {
         iseq     = GA_seq_arr[i];
@@ -5739,12 +5734,12 @@ void FixConpGA::update_charge_ppcg()
         qGA_incr = qlocalGA_incr_sum;
         MPI_Reduce(&qGA_incr, &qGA_incr_sum, 1, MPI_DOUBLE, MPI_SUM, 0, world);
 #ifndef CONP_NO_DEBUG
-        if (me == 0 && DEBUG_LOG_LEVEL > 0 && screen) {
+        if (me == 0 && DEBUG_LOG_LEVEL > 0) {
           t_end = clock();
-          fprintf(screen,
-                  "***** Converged at iteration %d max_Q = %g netcharge = %g "
-                  "Total Elps. %8.2f[s]\n",
-                  iter, q_max_total, qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
+          utils::logmesg(lmp,
+                         "***** Converged at iteration {} max_Q = {:g} netcharge = {:g} "
+                         "Total Elps. {:8.2f}[s]\n",
+                         iter, q_max_total, qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
         }
 #endif
         break;
@@ -5773,10 +5768,10 @@ void FixConpGA::update_charge_ppcg()
       MPI_Reduce(&qGA_incr, &qGA_incr_sum, 1, MPI_DOUBLE, MPI_SUM, 0, world);
 
       #ifndef CONP_NO_DEBUG
-      if (me == work_me && screen) {
+      if (me == work_me) {
         t_end = clock();
-        fprintf(screen,"***** Converged at iteration %d delta_PE = %g netcharge
-    = %g Total Elps. %8.2f[s]\n", iter, ptap_total/totalGA_num, qGA_incr_sum +
+        utils::logmesg(lmp,"***** Converged at iteration %d delta_PE = {:g} netcharge
+    = {:g} Total Elps. %8.2f[s]\n", iter, ptap_total/totalGA_num, qGA_incr_sum +
     qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
       }
       #endif
@@ -5835,17 +5830,17 @@ void FixConpGA::update_charge_ppcg()
 
     beta = (next_resnorm_total) / resnorm_total;
 
-    if (tol_style == TOL_RES) {
+    if (tol_style == TOL::RES) {
       if (fabs(next_resnorm_total) < totalGA_num * tolerance) {
         qGA_incr = qlocalGA_incr_sum;
         MPI_Reduce(&qGA_incr, &qGA_incr_sum, 1, MPI_DOUBLE, MPI_SUM, 0, world);
 #ifndef CONP_NO_DEBUG
-        if (me == 0 && DEBUG_LOG_LEVEL > 0 && screen) {
+        if (me == 0 && DEBUG_LOG_LEVEL > 0) {
           t_end = clock();
-          fprintf(screen,
-                  "***** Converged at iteration %d res = %g netcharge = %g "
-                  "Total Elps. %8.2f[s]\n",
-                  iter, sqrt(next_resnorm_total / totalGA_num), qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
+          utils::logmesg(lmp,
+                         "***** Converged at iteration {} res = {:g} netcharge = {:g} "
+                         "Total Elps. {:8.2f}[s]\n",
+                         iter, sqrt(next_resnorm_total / totalGA_num), qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
         }
 #endif
         break;
@@ -5860,13 +5855,13 @@ void FixConpGA::update_charge_ppcg()
 
     resnorm_total = next_resnorm_total;
 #ifndef CONP_NO_DEBUG
-    if (me == work_me && screen) {
+    if (me == work_me) {
       t_end = clock();
-      fprintf(screen,
-              "Iteration %d delta_PE = %g res = %g q_max = %g q_std = %g rq_std = "
-              "%g rel_B0 * q = %g alpha = %g beta = %g Elps. %8.2f[s]\n",
-              iter, ptap_total / totalGA_num, sqrt(fabs(resnorm_total / totalGA_num)), q_max_total, sqrt(q_std_total / totalGA_num),
-              sqrt(q_std_total / q_sqr_total), dPE_ij_total / PE_ij_total, alpha, beta, double(t_end - t_begin) / CLOCKS_PER_SEC);
+      utils::logmesg(lmp,
+                     "Iteration {} delta_PE = {:g} res = {:g} q_max = {:g} q_std = {:g} rq_std = "
+                     "{:g} rel_B0 * q = {:g} alpha = {:g} beta = {:g} Elps. {:8.2f}[s]\n",
+                     iter, ptap_total / totalGA_num, sqrt(fabs(resnorm_total / totalGA_num)), q_max_total, sqrt(q_std_total / totalGA_num),
+                     sqrt(q_std_total / q_sqr_total), dPE_ij_total / PE_ij_total, alpha, beta, double(t_end - t_begin) / CLOCKS_PER_SEC);
     }
 #endif
     neighbor->ago++;
@@ -5891,7 +5886,7 @@ void FixConpGA::update_charge_ppcg()
         Ele_qsum[iEle] += q_store_arr[iseq];
       }
     } else {
-      Ele_qsum_ptr = NULL;
+      Ele_qsum_ptr = nullptr;
     }
     POST2ND_charge(qGA_incr_sum + qsum_store, Ele_qsum, q_store_arr);
     // localGA_charge_neutrality(qGA_incr_sum + qsum_store, q_store_arr);
@@ -5950,13 +5945,13 @@ void FixConpGA::update_charge_pcg()
 #ifndef CONP_NO_DEBUG
       qsum_store = electro->calc_qsum();
       if (fabs(qsum_store) > 1e-11)
-        if (me == 0) fprintf(screen, "invalid neutrality state of qsum = %.10f\n", qsum_store);
+        if (me == 0) utils::logmesg(lmp, "invalid neutrality state of qsum = %.10f\n", qsum_store);
 #endif
     }
   }
 
   /*
-  if ( tol_style == TOL_REL_B && q_store.capacity()>= nlocal) {
+  if ( tol_style == TOL::REL_B && q_store.capacity()>= nlocal) {
     #ifndef CONP_NO_DEBUG
     for (i = 0; i < localGA_num; i++) {
       iseq = GA_seq_arr[i];
@@ -5989,7 +5984,7 @@ void FixConpGA::update_charge_pcg()
   double* const firstneigh_inva          = firstneigh_inva_self + localGA_num;
   const int* const firstneigh_seq        = &localGA_firstneigh.front();
   const int* const firstneigh_localIndex = &localGA_firstneigh_localIndex.front();
-  // if (me == work_me and screen && force->kspace != NULL) fprintf(screen,
+  // if (me == work_me && force->kspace != nullptr) utils::logmesg(lmp,
   // "self_potential = %6e\n", self_ECpotential);
 
   double* z_localGA_tmp; // * z_localGA_tmp;
@@ -6013,7 +6008,7 @@ void FixConpGA::update_charge_pcg()
 
   local_res_sum = 0;
 
-  if (tol_style == TOL_REL_B) {
+  if (tol_style == TOL::REL_B) {
     PE_ij_local = 0;
     for (i = 0; i < localGA_num; i++) {
 
@@ -6037,7 +6032,7 @@ void FixConpGA::update_charge_pcg()
         q_iters[0][i] = qtmp;
       }
 #endif
-      // if (me == 0 and screen) fprintf(screen, "Seq: %d, Charge %f, U_ext
+      // if (me == 0) utils::logmesg(lmp, "Seq: %d, Charge %f, U_ext
       // %f\n", iseq, qtmp, res_localGA[i]);
     }
     MPI_Allreduce(&PE_ij_local, &PE_ij_total, 1, MPI_DOUBLE, MPI_SUM, world);
@@ -6053,7 +6048,7 @@ void FixConpGA::update_charge_pcg()
         q_iters[0][i] = qtmp;
       }
 #endif
-      // if (me == 0 and screen) fprintf(screen, "Seq: %d, Charge %f, U_ext
+      // if (me == 0) utils::logmesg(lmp, "Seq: %d, Charge %f, U_ext
       // %f\n", iseq, qtmp, res_localGA[i]);
     }
   }
@@ -6087,9 +6082,9 @@ void FixConpGA::update_charge_pcg()
   MPI_Allreduce(&ptap_local, &ptap_total, 1, MPI_DOUBLE, MPI_SUM, world);
 
 #ifndef CONP_NO_DEBUG
-  if (me == work_me && screen) {
+  if (me == work_me) {
     t_end = clock();
-    fprintf(screen, "Iteration 0: z*r = %20.18g, r*r = %20.18g, z*z = %20.18g\n", resnorm_total, next_resnorm_total, ptap_total);
+    utils::logmesg(lmp, "Iteration 0: z*r = {:20.18g}, r*r = {:20.18g}, z*z = {:20.18g}\n", resnorm_total, next_resnorm_total, ptap_total);
   }
 #endif
 /***************************************************************
@@ -6101,7 +6096,7 @@ void FixConpGA::update_charge_pcg()
 [4] beta                = next_resnorm_total/resnorm_total;
 ************************************************************* */
 #ifndef CONP_NO_DEBUG
-  if (pcg_out != NULL) {
+  if (pcg_out != nullptr) {
     pcg_res_norm[0][0] = resnorm_total;
     pcg_res_norm[0][1] = next_resnorm_total;
     pcg_res_norm[0][2] = ptap_total;
@@ -6124,7 +6119,7 @@ void FixConpGA::update_charge_pcg()
 
     time_t t_begin0 = clock();
     electro->compute_GAtoGA();
-    electro->calc_GA_potential(0, 0, 2);
+    electro->calc_GA_potential(STAT::E, STAT::E, SUM_OP::BOTH);
     update_K_time += double(clock() - t_begin0) / CLOCKS_PER_SEC;
 
     ptap_local = 0;
@@ -6148,7 +6143,7 @@ void FixConpGA::update_charge_pcg()
     // printf("alpha = %f, resnorm_total = %f, ptap_total = %f\n", alpha,
     // resnorm_total, ptap_total);
     local_res_sum = 0;
-    if (tol_style == TOL_REL_B) {
+    if (tol_style == TOL::REL_B) {
       PE_ij_local = 0;
       for (i = 0; i < localGA_num; i++) {
         iseq     = GA_seq_arr[i];
@@ -6175,17 +6170,17 @@ void FixConpGA::update_charge_pcg()
         qGA_incr = qlocalGA_incr_sum;
         MPI_Reduce(&qGA_incr, &qGA_incr_sum, 1, MPI_DOUBLE, MPI_SUM, 0, world);
 #ifndef CONP_NO_DEBUG
-        if (me == 0 && DEBUG_LOG_LEVEL > 0 && screen) {
+        if (me == 0 && DEBUG_LOG_LEVEL > 0) {
           t_end = clock();
-          fprintf(screen,
-                  "***** Converged at iteration %d rel_B0 * q = %g netcharge = "
-                  "%g Total Elps. %8.2f[s]\n",
-                  iter, dPE_ij_total / PE_ij_total, qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
+          utils::logmesg(lmp,
+                         "***** Converged at iteration {} rel_B0 * q = {:g} netcharge = "
+                         "{:g} Total Elps. {:8.2f}[s]\n",
+                         iter, dPE_ij_total / PE_ij_total, qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
         }
 #endif
         break;
       } // if
-    } else if (tol_style == TOL_RES || tol_style == TOL_PE) {
+    } else if (tol_style == TOL::RES || tol_style == TOL::PE) {
       for (i = 0; i < localGA_num; i++) {
         iseq     = GA_seq_arr[i];
         qGA_incr = alpha * p_localGA[i];
@@ -6199,7 +6194,7 @@ void FixConpGA::update_charge_pcg()
         cl_atom[iseq] = res_localGA[i] -= alpha * ap_localGA[i];
         local_res_sum += res_localGA[i];
       }
-    } else if (tol_style == TOL_MAX_Q) {
+    } else if (tol_style == TOL::MAX_Q) {
       q_max_local = 0;
       for (i = 0; i < localGA_num; i++) {
         iseq     = GA_seq_arr[i];
@@ -6226,17 +6221,17 @@ void FixConpGA::update_charge_pcg()
         qGA_incr = qlocalGA_incr_sum;
         MPI_Reduce(&qGA_incr, &qGA_incr_sum, 1, MPI_DOUBLE, MPI_SUM, 0, world);
 #ifndef CONP_NO_DEBUG
-        if (me == 0 && DEBUG_LOG_LEVEL > 0 && screen) {
+        if (me == 0 && DEBUG_LOG_LEVEL > 0) {
           t_end = clock();
-          fprintf(screen,
-                  "***** Converged at iteration %d max_Q = %g netcharge = %g "
-                  "Total Elps. %8.2f[s]\n",
-                  iter, q_max_total, qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
+          utils::logmesg(lmp,
+                         "***** Converged at iteration {} max_Q = {:g} netcharge = {:g} "
+                         "Total Elps. {:8.2f}[s]\n",
+                         iter, q_max_total, qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
         }
 #endif
         break;
       } // if
-    } else if (tol_style == TOL_STD_Q) {
+    } else if (tol_style == TOL::STD_Q) {
       q_std_local = 0;
       for (i = 0; i < localGA_num; i++) {
         iseq     = GA_seq_arr[i];
@@ -6259,18 +6254,18 @@ void FixConpGA::update_charge_pcg()
         qGA_incr = qlocalGA_incr_sum;
         MPI_Reduce(&qGA_incr, &qGA_incr_sum, 1, MPI_DOUBLE, MPI_SUM, 0, world);
 #ifndef CONP_NO_DEBUG
-        if (me == 0 && DEBUG_LOG_LEVEL > 0 && screen) {
+        if (me == 0 && DEBUG_LOG_LEVEL > 0) {
           t_end = clock();
-          fprintf(screen,
-                  "***** Converged at iteration %d std_Q = %g netcharge = %g "
-                  "Total Elps. %8.2f[s]\n",
-                  iter, sqrt(q_std_total / totalGA_num), qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
+          utils::logmesg(lmp,
+                         "***** Converged at iteration {} std_Q = {:g} netcharge = {:g} "
+                         "Total Elps. {:8.2f}[s]\n",
+                         iter, sqrt(q_std_total / totalGA_num), qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
         }
 #endif
         break;
       } // if
-      // TOL_MAX_Q
-    } else if (tol_style == TOL_STD_RQ) {
+      // TOL::MAX_Q
+    } else if (tol_style == TOL::STD_RQ) {
       q_std_local = q_sqr_local = 0;
       for (i = 0; i < localGA_num; i++) {
         iseq     = GA_seq_arr[i];
@@ -6297,17 +6292,17 @@ void FixConpGA::update_charge_pcg()
         qGA_incr = qlocalGA_incr_sum;
         MPI_Reduce(&qGA_incr, &qGA_incr_sum, 1, MPI_DOUBLE, MPI_SUM, 0, world);
 #ifndef CONP_NO_DEBUG
-        if (me == 0 && DEBUG_LOG_LEVEL > 0 && screen) {
+        if (me == 0 && DEBUG_LOG_LEVEL > 0) {
           t_end = clock();
-          fprintf(screen,
-                  "***** Converged at iteration %d std_RQ = %g netcharge = %g "
-                  "Total Elps. %8.2f[s]\n",
-                  iter, sqrt(q_std_total / q_sqr_total), qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
+          utils::logmesg(lmp,
+                         "***** Converged at iteration {} std_RQ = {:g} netcharge = {:g}\n"
+                         "Total Elps. {:8.2f}[s]\n",
+                         iter, sqrt(q_std_total / q_sqr_total), qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
         }
 #endif
         break;
       }
-    } else if (tol_style == TOL_ABS_Q) {
+    } else if (tol_style == TOL::ABS_Q) {
       q_std_local = q_sqr_local = 0;
       for (i = 0; i < localGA_num; i++) {
         iseq     = GA_seq_arr[i];
@@ -6333,29 +6328,29 @@ void FixConpGA::update_charge_pcg()
         qGA_incr = qlocalGA_incr_sum;
         MPI_Reduce(&qGA_incr, &qGA_incr_sum, 1, MPI_DOUBLE, MPI_SUM, 0, world);
 #ifndef CONP_NO_DEBUG
-        if (me == 0 && DEBUG_LOG_LEVEL > 0 && screen) {
+        if (me == 0 && DEBUG_LOG_LEVEL > 0) {
           t_end = clock();
-          fprintf(screen,
-                  "***** Converged at iteration %d abs_RQ = %g netcharge = %g "
-                  "Total Elps. %8.2f[s]\n",
-                  iter, q_std_total / q_sqr_total, qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
+          utils::logmesg(lmp,
+                         "***** Converged at iteration {} abs_RQ = {:g} netcharge = {:g} "
+                         "Total Elps. {:8.2}[s]\n",
+                         iter, q_std_total / q_sqr_total, qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
         }
 #endif
         break;
       } // if
     }
 
-    if (tol_style == TOL_PE) {
+    if (tol_style == TOL::PE) {
       if (fabs(ptap_total) < totalGA_num * tolerance) {
         qGA_incr = qlocalGA_incr_sum;
         MPI_Reduce(&qGA_incr, &qGA_incr_sum, 1, MPI_DOUBLE, MPI_SUM, 0, world);
 #ifndef CONP_NO_DEBUG
-        if (me == 0 && DEBUG_LOG_LEVEL > 0 && screen) {
+        if (me == 0 && DEBUG_LOG_LEVEL > 0) {
           t_end = clock();
-          fprintf(screen,
-                  "***** Converged at iteration %d delta_PE = %g netcharge = "
-                  "%g Total Elps. %8.2f[s]\n",
-                  iter, ptap_total / totalGA_num, qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
+          utils::logmesg(lmp,
+                         "***** Converged at iteration {} delta_PE = {:g} netcharge = "
+                         "{:g} Total Elps. {:8.2f}[s]\n",
+                         iter, ptap_total / totalGA_num, qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
         }
 #endif
         break;
@@ -6371,7 +6366,7 @@ void FixConpGA::update_charge_pcg()
       iseq           = GA_seq_arr[i];
       res_localGA[i] = cl_atom[iseq];
 #ifndef CONP_NO_DEBUG
-      if (me == work_me && screen && DEBUG_LOG_LEVEL > 1) fprintf(screen, "res_localGA: %d %d %d %f\n", i, iseq, tag[iseq], cl_atom[iseq]);
+      if (me == work_me && DEBUG_LOG_LEVEL > 1) utils::logmesg(lmp, "res_localGA: {} {} {} {:f}\n", i, iseq, tag[iseq], cl_atom[iseq]);
 #endif
     }
     // ----------- End of update r and q; -----------------
@@ -6387,17 +6382,17 @@ void FixConpGA::update_charge_pcg()
     // MPI_Allreduce(&next_Polak_resnorm_local, &next_Polak_resnorm_total, 1,
     // MPI_DOUBLE, MPI_SUM, world);
 
-    if (tol_style == TOL_RES) {
+    if (tol_style == TOL::RES) {
       if (fabs(next_resnorm_total) < totalGA_num * tolerance) {
         qGA_incr = qlocalGA_incr_sum;
         MPI_Reduce(&qGA_incr, &qGA_incr_sum, 1, MPI_DOUBLE, MPI_SUM, 0, world);
 #ifndef CONP_NO_DEBUG
-        if (me == 0 && DEBUG_LOG_LEVEL > 0 && screen) {
+        if (me == 0 && DEBUG_LOG_LEVEL > 0) {
           t_end = clock();
-          fprintf(screen,
-                  "***** Converged at iteration %d res = %g netcharge = %g "
-                  "Total Elps. %8.2f[s]\n",
-                  iter, sqrt(next_resnorm_total / totalGA_num), qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
+          utils::logmesg(lmp,
+                         "***** Converged at iteration {} res = {:g} netcharge = {:g} "
+                         "Total Elps. {:8.2f}[s]\n",
+                         iter, sqrt(next_resnorm_total / totalGA_num), qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
         }
 #endif
         break;
@@ -6407,7 +6402,7 @@ void FixConpGA::update_charge_pcg()
     beta = (next_resnorm_total) / resnorm_total;
 
 #ifndef CONP_NO_DEBUG
-    if (pcg_out != NULL) {
+    if (pcg_out != nullptr) {
       pcg_res_norm[iter][0] = resnorm_total;
       pcg_res_norm[iter][1] = next_resnorm_total;
       pcg_res_norm[iter][2] = ptap_total;
@@ -6425,13 +6420,13 @@ void FixConpGA::update_charge_pcg()
 
     resnorm_total = next_resnorm_total;
 #ifndef CONP_NO_DEBUG
-    if (me == work_me && screen) {
+    if (me == work_me) {
       t_end = clock();
-      fprintf(screen,
-              "Iteration %d delta_PE = %g res = %g q_max = %g q_std = %g rq_std = "
-              "%g rel_B0 * q = %g alpha = %g beta = %g Elps. %8.2f[s]\n",
-              iter, ptap_total / totalGA_num, sqrt(fabs(resnorm_total / totalGA_num)), q_max_total, sqrt(q_std_total / totalGA_num),
-              sqrt(q_std_total / q_sqr_total), dPE_ij_total / PE_ij_total, alpha, beta, double(t_end - t_begin) / CLOCKS_PER_SEC);
+      utils::logmesg(lmp,
+                     "Iteration {} delta_PE = {:g} res = {:g} q_max = {:g} q_std = {:g} rq_std = "
+                     "{:g} rel_B0 * q = {:g} alpha = {:g} beta = {:g} Elps. {:8.2f}[s]\n",
+                     iter, ptap_total / totalGA_num, sqrt(fabs(resnorm_total / totalGA_num)), q_max_total, sqrt(q_std_total / totalGA_num),
+                     sqrt(q_std_total / q_sqr_total), dPE_ij_total / PE_ij_total, alpha, beta, double(t_end - t_begin) / CLOCKS_PER_SEC);
     }
 #endif
     neighbor->ago++;
@@ -6444,7 +6439,7 @@ void FixConpGA::update_charge_pcg()
   curriter = iter;
 
 #ifndef CONP_NO_DEBUG
-  if (pcg_out != NULL) {
+  if (pcg_out != nullptr) {
     pcg_analysis();
   }
 #endif
@@ -6463,11 +6458,11 @@ void FixConpGA::update_charge_pcg()
         Ele_qsum[iEle] += q_store_arr[iseq];
       }
     } else {
-      Ele_qsum_ptr = NULL;
+      Ele_qsum_ptr = nullptr;
     }
     POST2ND_charge(qGA_incr_sum + qsum_store, Ele_qsum, q_store_arr);
     /*
-    if (tol_style == TOL_REL_B) {
+    if (tol_style == TOL::REL_B) {
       for (i = 0; i < localGA_num; i++) {
           iseq = GA_seq_arr[i];
           B0_next[i] -= value;
@@ -6658,7 +6653,7 @@ void FixConpGA::update_charge_cg()
 #ifndef CONP_NO_DEBUG
       qsum_store = electro->calc_qsum();
       if (fabs(qsum_store) > 1e-11)
-        if (me == 0) fprintf(screen, "invalid neutrality state of qsum = %.10f\n", qsum_store);
+        if (me == 0) utils::logmesg(lmp, "invalid neutrality state of qsum = %.10f\n", qsum_store);
 #endif
     }
   }
@@ -6671,7 +6666,7 @@ void FixConpGA::update_charge_cg()
   // double accelerate_factor = 1/self_GreenCoef[1];
   // printf("accelerate_factor: %f\n", accelerate_factor);
 
-  // if (me == work_me and screen && force->kspace != NULL) fprintf(screen,
+  // if (me == work_me && force->kspace != nullptr) utils::logmesg(lmp,
   // "self_potential = %6e\n", self_ECpotential);
 
   // double qsum_store = 0;
@@ -6690,7 +6685,7 @@ void FixConpGA::update_charge_cg()
   }
 
   resnorm_local = 0;
-  if (tol_style == TOL_REL_B) {
+  if (tol_style == TOL::REL_B) {
     PE_ij_local = 0;
     for (i = 0; i < localGA_num; i++) {
       iseq  = GA_seq_arr[i];
@@ -6749,13 +6744,13 @@ void FixConpGA::update_charge_cg()
     q[i] = q_store_arr[i];
     res_localGA[i] = p_localGA[i] -= value;
     resnorm_local += res_localGA[i] * res_localGA[i];
-    if (me == 0 and screen) fprintf(screen, "Seq: %d, Charge %f, U_ext %f",
+    if (me == 0) utils::logmesg(lmp, "Seq: %d, Charge %f, U_ext %f",
   ilocalseq, qtmp, res_localGA[i]);
   }
   */
   MPI_Allreduce(&resnorm_local, &resnorm_total, 1, MPI_DOUBLE, MPI_SUM, world);
-  if (screen && DEBUG_LOG_LEVEL > 0) {
-    fprintf(screen, "Iteration 0: r*r = %20.18g\n", resnorm_total);
+  if (DEBUG_LOG_LEVEL > 0) {
+    utils::logmesg(lmp, "Iteration 0: r*r = {:20.18g}\n", resnorm_total);
   }
   for (iter = 0; iter < maxiter; iter++) {
     // ----------- Calculate ap = AAA*p from update_charge_cg[]
@@ -6773,7 +6768,7 @@ void FixConpGA::update_charge_cg()
     t_begin = clock();
     electro->compute_GAtoGA();
     // calculation in kspace;
-    electro->calc_GA_potential(0, 0, 2);
+    electro->calc_GA_potential(STAT::E, STAT::E, SUM_OP::BOTH);
     update_K_time += double(clock() - t_begin) / CLOCKS_PER_SEC;
 
     ptap_local = 0;
@@ -6796,7 +6791,7 @@ void FixConpGA::update_charge_cg()
     next_resnorm_local = 0;
 
     // qGA_incr_sqr = 0;
-    if (tol_style == TOL_REL_B) {
+    if (tol_style == TOL::REL_B) {
       PE_ij_local = 0;
       for (i = 0; i < localGA_num; i++) {
         iseq     = GA_seq_arr[i];
@@ -6818,18 +6813,18 @@ void FixConpGA::update_charge_cg()
         qGA_incr = qlocalGA_incr_sum;
         MPI_Reduce(&qGA_incr, &qGA_incr_sum, 1, MPI_DOUBLE, MPI_SUM, 0, world);
 #ifndef CONP_NO_DEBUG
-        if (me == 0 && DEBUG_LOG_LEVEL > 0 && screen) {
+        if (me == 0 && DEBUG_LOG_LEVEL > 0) {
           t_end = clock();
-          fprintf(screen,
-                  "***** Converged at iteration %d rel_B0 * q = %g netcharge = "
-                  "%g Total Elps. %8.2f[s]\n",
-                  iter, dPE_ij_total / PE_ij_total, qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
+          utils::logmesg(lmp,
+                         "***** Converged at iteration {} rel_B0 * q = {:g} netcharge = "
+                         "{:g} Total Elps. {:8.2f}[s]\n",
+                         iter, dPE_ij_total / PE_ij_total, qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
         }
 #endif
         break;
       } // if
 
-    } else if (tol_style == TOL_RES) {
+    } else if (tol_style == TOL::RES) {
       printf("good\n");
       for (i = 0; i < localGA_num; i++) {
         iseq     = GA_seq_arr[i];
@@ -6840,7 +6835,7 @@ void FixConpGA::update_charge_cg()
         next_resnorm_local += res_localGA[i] * res_localGA[i];
       }
       printf("good2\n");
-    } else if (tol_style == TOL_MAX_Q) {
+    } else if (tol_style == TOL::MAX_Q) {
       q_max_local = 0;
       for (i = 0; i < localGA_num; i++) {
         iseq     = GA_seq_arr[i];
@@ -6863,12 +6858,12 @@ void FixConpGA::update_charge_cg()
         qGA_incr = qlocalGA_incr_sum;
         MPI_Reduce(&qGA_incr, &qGA_incr_sum, 1, MPI_DOUBLE, MPI_SUM, 0, world);
 #ifndef CONP_NO_DEBUG
-        if (me == 0 && DEBUG_LOG_LEVEL > 0 && screen) {
+        if (me == 0 && DEBUG_LOG_LEVEL > 0) {
           t_end = clock();
-          fprintf(screen,
-                  "***** Converged at iteration %d max_Q = %g netcharge = %g "
-                  "Total Elps. %8.2f[s]\n",
-                  iter, q_max_total, qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
+          utils::logmesg(lmp,
+                         "***** Converged at iteration {} max_Q = {:g} netcharge = {:g} "
+                         "Total Elps. {:8.2f}[s]\n",
+                         iter, q_max_total, qGA_incr_sum + qsum_store, double(t_end - t_begin) / CLOCKS_PER_SEC);
         }
 #endif
         break;
@@ -6881,31 +6876,31 @@ void FixConpGA::update_charge_cg()
     // MPI_SUM, world);
 
 #ifndef CONP_NO_DEBUG
-    if (screen && me == work_me && DEBUG_LOG_LEVEL > 0) {
+    if (me == work_me && DEBUG_LOG_LEVEL > 0) {
       t_end = clock();
-      fprintf(screen,
-              "iter %d delta_PE = %g res = %g rel_B0 * q = %g netcharge = %g "
-              "Total Elps. %8.2f[s]\n",
-              iter, ptap_total / totalGA_num, sqrt(next_resnorm_total / totalGA_num), dPE_ij_total / PE_ij_total, qGA_incr_sum + qsum_store,
-              double(t_end - t_begin) / CLOCKS_PER_SEC);
+      utils::logmesg(lmp,
+                     "iter {} delta_PE = {:g} res = {:g} rel_B0 * q = {:g} netcharge = {:g} "
+                     "Total Elps. {:8.2f}[s]\n",
+                     iter, ptap_total / totalGA_num, sqrt(next_resnorm_total / totalGA_num), dPE_ij_total / PE_ij_total, qGA_incr_sum + qsum_store,
+                     double(t_end - t_begin) / CLOCKS_PER_SEC);
     }
 #endif
 
     // if (fabs(next_resnorm_total/totalGA_num) < tolerance) {
-    if (tol_style == TOL_RES) {
+    if (tol_style == TOL::RES) {
       if (next_resnorm_total < totalGA_num * tolerance) {
         // qsum_qsq(q_store_arr);
         qGA_incr = qlocalGA_incr_sum;
         MPI_Reduce(&qGA_incr, &qGA_incr_sum, 1, MPI_DOUBLE, MPI_SUM, 0, world);
 #ifndef CONP_NO_DEBUG
-        if (screen && me == work_me && DEBUG_LOG_LEVEL > 0) {
+        if (me == work_me && DEBUG_LOG_LEVEL > 0) {
           t_end = clock();
-          fprintf(screen,
-                  "Iteration %d delta_PE = %g res = %g q_max = %g q_std = %g "
-                  "rq_std = %g rel_B0 * q = %g alpha = %g beta = %g Elps. "
-                  "%8.2f[s]\n",
-                  iter, ptap_total / totalGA_num, sqrt(fabs(resnorm_total / totalGA_num)), q_max_total, sqrt(q_std_total / totalGA_num),
-                  sqrt(q_std_total / q_sqr_total), dPE_ij_total / PE_ij_total, alpha, beta, double(t_end - t_begin) / CLOCKS_PER_SEC);
+          utils::logmesg(lmp,
+                         "Iteration {} delta_PE = {:g} res = {:g} q_max = {:g} q_std = {:g} "
+                         "rq_std = {:g} rel_B0 * q = {:g} alpha = {:g} beta = {:g} Elps. "
+                         "{:8.2f}[s]\n",
+                         iter, ptap_total / totalGA_num, sqrt(fabs(resnorm_total / totalGA_num)), q_max_total, sqrt(q_std_total / totalGA_num),
+                         sqrt(q_std_total / q_sqr_total), dPE_ij_total / PE_ij_total, alpha, beta, double(t_end - t_begin) / CLOCKS_PER_SEC);
         }
 #endif
         break;
@@ -6923,9 +6918,9 @@ void FixConpGA::update_charge_cg()
     resnorm_total = next_resnorm_total;
     /*
     #ifndef CONP_NO_DEBUG
-    if (screen && me == work_me && DEBUG_LOG_LEVEL > 0) {
+    if (me == work_me && DEBUG_LOG_LEVEL > 0) {
       t_end = clock();
-      fprintf(screen,"Iteration %d: res = %g, ptap = %g, alpha = %g, Elps.
+      utils::logmesg(lmp,"Iteration %d: res = {:g}, ptap = {:g}, alpha = {:g}, Elps.
     %8.2f[s]\n", iter, resnorm_total, ptap_total, alpha, double(t_end - t_begin)
     / CLOCKS_PER_SEC);
     }
@@ -6947,7 +6942,7 @@ void FixConpGA::update_charge_cg()
         Ele_qsum[iEle] += q_store_arr[iseq];
       }
     } else {
-      Ele_qsum_ptr = NULL;
+      Ele_qsum_ptr = nullptr;
     }
     // localGA_charge_neutrality(qGA_incr_sum + qsum_store, q_store_arr);
     POST2ND_charge(qGA_incr_sum + qsum_store, Ele_qsum_ptr, q_store_arr);
@@ -6996,8 +6991,8 @@ double FixConpGA::POST2ND_charge(double value, double* Ele_qsum0, double* q)
 {
   FUNC_MACRO(0);
   switch (Ele_Cell_Model) {
-    case CELL_POT_CONTROL:
-      if (Ele_qsum0 != NULL) {
+    case CELL::POT:
+      if (Ele_qsum0 != nullptr) {
         double qlocal_charge = 0;
         for (int i = 0; i < Ele_num; i++) {
           qlocal_charge += Ele_qsum[i];
@@ -7008,7 +7003,7 @@ double FixConpGA::POST2ND_charge(double value, double* Ele_qsum0, double* q)
         return POST2ND_localGA_neutrality(value, q);
       }
       break;
-    case CELL_Q_CONTROL:
+    case CELL::Q:
       return POST2ND_solve_ele_matrix(Ele_qsum0, q);
     default:
       error->all(FLERR, "There is not a valid post treatment step for current "
@@ -7083,11 +7078,11 @@ double FixConpGA::POST2ND_localGA_neutrality(double qsum_totalGA, double* q)
   // rintf("qsum_totalGA = %.12g\n", qsum_totalGA);
 
   if (fabs(qsum_totalGA) < 1e-15) {
-    // if (me == 0 and screen) fprintf(screen, "Reach the criteria without new
+    // if (me == 0) utils::logmesg(lmp, "Reach the criteria without new
     // charge neutrality treatment\n");
     return 0;
   }
-  // if (me == 0 and screen) fprintf(screen, "qsum_totalGA = %g\n",
+  // if (me == 0) utils::logmesg(lmp, "qsum_totalGA = {:g}\n",
   // qsum_totalGA);
   int n  = atom->ntypes;
   Ushift = qsum_totalGA * inv_AAA_sumsum;
@@ -7105,10 +7100,10 @@ double FixConpGA::POST2ND_localGA_neutrality(double qsum_totalGA, double* q)
   Uchem -= Ushift;
 
   /*
-  if (me == 0 && screen) {
+  if (me == 0) {
     if (unit_flag == 1) {
-      fprintf(screen, "The Extra chemical potential shift is %f [V]\n", Uchem *
-  inv_qe2f); } else { fprintf(screen, "The Extra chemical potential shift is %f
+      utils::logmesg(lmp, "The Extra chemical potential shift is %f [V]\n", Uchem *
+  inv_qe2f); } else { utils::logmesg(lmp, "The Extra chemical potential shift is %f
   [Energy/e]\n", Uchem);
     }
   }
@@ -7146,19 +7141,19 @@ void FixConpGA::update_charge_AAA()
       #ifndef CONP_NO_DEBUG
       qsum_store = electro->calc_qsum();
       if (fabs(qsum_store) > 1e-11)
-        if(me == 0) fprintf(screen, "invalid neutrality state of qsum =
+        if(me == 0) utils::logmesg(lmp, "invalid neutrality state of qsum =
   %.10f\n", qsum_store); #endif
     }
   }
   */
-  // if (me == 0 && DEBUG_LOG_LEVEL > 0 && screen) fprintf(screen, "qsum =
+  // if (me == 0 && DEBUG_LOG_LEVEL > 0) utils::logmesg(lmp, "qsum =
   // %.16f, Uchem = %f\n", qsum, Uchem);
 
   // double * qstore;
   // memory->create(q_store, localGA_num, "FixConpGA:q_store");
 
   // double self_potential = Xi_self * qsum;
-  // vif (me == 0 and screen && force->kspace != NULL) fprintf(screen,
+  // vif (me == 0 && force->kspace != nullptr) utils::logmesg(lmp,
   // "self_potential = %6e\n", self_potential); double cl_hash = 0, ks_hash = 0;
 
   for (size_t i = 0; i < localGA_num; i++) {
@@ -7206,8 +7201,7 @@ void FixConpGA::update_charge_AAA()
     // MPI_Allreduce(&qlocalGA_incr_sum, &qGA_incr_sum, 1, MPI_DOUBLE, MPI_SUM,
     // world); localGA_charge_neutrality(qsum_store + qGA_incr_sum, q);
     POST2ND_charge(qtotal_SOL, Ele_qsum, q);
-    // if (me == 0 && DEBUG_LOG_LEVEL > 0 && screen) fprintf(screen, "qsum =
-    // %.16f\n", qsum);
+    // if (me == 0 && DEBUG_LOG_LEVEL > 0) utils::logmesg(lmp, "qsum = {:.16}\n", qsum);
   }
   // printf("q1,q2= %.10f, %.10f, %.10f, %.10f\n", q[0], q[1], q[2], q[3]);
 
@@ -7247,10 +7241,10 @@ void FixConpGA::solve_LS(double* a, double* b, char T, MKL_INT M, MKL_INT N)
   double s[M];
 
   // char T = 'N';
-  if (me == 0 && screen && DEBUG_LOG_LEVEL > 0) {
-    fprintf(screen, "solve_LS with T = %c\n", T);
-    fprintf(screen, "  m = %d,   n = %d\n", m, n);
-    fprintf(screen, "lda = %d, ldb = %d\n", lda, ldb);
+  if (me == 0 && DEBUG_LOG_LEVEL > 0) {
+    utils::logmesg(lmp, "solve_LS with T = {}\n", T);
+    utils::logmesg(lmp, "  m = {},   n = {}\n", m, n);
+    utils::logmesg(lmp, "lda = {}, ldb = {}\n", lda, ldb);
   }
 
   MKL_INT iwork[16 * max * 1 + 11 * max];
@@ -7310,10 +7304,10 @@ void FixConpGA::inv_AAA_LAPACK(double* AAA, MKL_INT mat_size)
   double wkopt[4];
   char buf[256];
 
-  if (me == 0 and screen) fprintf(screen, "[ConpGA] LAPACK with mat_size = %d;\n", mat_size);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] LAPACK with mat_size = {};\n", mat_size);
   dgetrf_(&m, &n, AAA, &lda, ipiv, &info);
   if (info != 0) {
-    sprintf(buf, "[ConpGA] LAPACK Error in dgetrf_, info = %d\n", info);
+    sprintf(buf, "[ConpGA] LAPACK Error in dgetrf_, info = %s\n", info);
     error->one(FLERR, buf);
   }
 
@@ -7324,9 +7318,9 @@ void FixConpGA::inv_AAA_LAPACK(double* AAA, MKL_INT mat_size)
   }
 
   lwork = (MKL_INT)wkopt[0] + 1; // save mem.
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] LAPACK with lwork = %d\n", lwork);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] LAPACK with lwork = {}\n", lwork);
   if (lwork <= 0 || lwork > max_lwork) {
-    if (me == 0 && screen) fprintf(screen, "[ConpGA] LAPACK with reseting lwork as %d\n", max_lwork);
+    if (me == 0) utils::logmesg(lmp, "[ConpGA] LAPACK with reseting lwork as {}\n", max_lwork);
     lwork = max_lwork;
   }
 
@@ -7338,9 +7332,9 @@ void FixConpGA::inv_AAA_LAPACK(double* AAA, MKL_INT mat_size)
     error->one(FLERR, buf);
   }
   delete[] ipiv;
-  ipiv = NULL;
+  ipiv = nullptr;
   delete[] work;
-  work = NULL;
+  work = nullptr;
 }
 
 /* ------------------------------------------------------------------------------------
@@ -7352,7 +7346,8 @@ void FixConpGA::meanSum_AAA_cg()
 {
   FUNC_MACRO(0)
   int i, iseq, n = atom->ntypes, *type = atom->type;
-  int nlocal = atom->nlocal, tol_style_store = tol_style;
+  int nlocal          = atom->nlocal;
+  TOL tol_style_store = tol_style;
   double *q = atom->q, qtmp, AAA_sumsum_local = 0, tolerance_store = tolerance;
   const int* const localGA_seq_arr = &localGA_seq.front();
 
@@ -7375,28 +7370,28 @@ void FixConpGA::meanSum_AAA_cg()
     ek_atom[iseq] = (-1 + localGA_Vext[i]); // The extra localGA_Vext will be cancelled in the
   }
 
-  // if (minimizer == MIN_PCG) {
+  // if (minimizer == MIN::PCG) {
   tolerance = 1e-20;
-  tol_style = TOL_MAX_Q;
-  if (me == 0 and screen)
-    fprintf(screen,
-            "[ConpGA] Switch to max_Q criterion to calculate inv_AAA_sumsum "
-            "with the tolerance of %g\n",
-            tolerance); //}
+  tol_style = TOL::MAX_Q;
+  if (me == 0)
+    utils::logmesg(lmp,
+                   "[ConpGA] Switch to max_Q criterion to calculate inv_AAA_sumsum "
+                   "with the tolerance of {:g}\n",
+                   tolerance); //}
 
   neutrality_flag = postreat_flag = false;
   switch (minimizer) {
-    case MIN_CG:
+    case MIN::CG:
       update_charge_cg();
       break;
-    case MIN_PCG:
+    case MIN::PCG:
       update_charge_pcg();
       break;
-    case MIN_PCG_EX:
+    case MIN::PCG_EX:
       update_charge_ppcg();
       break;
     default:
-      error->all(FLERR, "meanSum_AAA_cg() only valid for MIN_CG, MIN_PCG or MIN_PPCG methods");
+      error->all(FLERR, "meanSum_AAA_cg() only valid for MIN::CG, MIN::PCG or MIN::PPCG methods");
   }
   tolerance       = tolerance_store;
   tol_style       = tol_style_store;
@@ -7409,12 +7404,12 @@ void FixConpGA::meanSum_AAA_cg()
     // with a constant potential shift for all metal atoms
     AAA_sumsum_local += AAA_sum1D[i] = q[iseq]; // - AAA_sum1D[i];
     q[iseq]                          = q_store_arr[i];
-    if (me == 0 && screen && DEBUG_LOG_LEVEL > 1) {
-      fprintf(screen, "[Proc. #%d] %d %.16f %.16f %.16f\n", me, i, localGA_Vext[i], q[iseq], AAA_sum1D[i]);
+    if (me == 0 && DEBUG_LOG_LEVEL > 1) {
+      utils::logmesg(lmp, "[Proc. #{}] {} {:.16} {:.16} {:.16}\n", me, i, localGA_Vext[i], q[iseq], AAA_sum1D[i]);
     }
   }
   MPI_Allreduce(&AAA_sumsum_local, &AAA_sumsum, 1, MPI_DOUBLE, MPI_SUM, world);
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] inv_AAA_sumsum = %20.16f from iteration methods\n", 1 / AAA_sumsum);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] inv_AAA_sumsum = {:20.16f} from iteration methods\n", 1 / AAA_sumsum);
 
   inv_AAA_sumsum = 1 / AAA_sumsum;
   for (size_t i = 0; i < localGA_num; i++) {
@@ -7454,16 +7449,16 @@ void FixConpGA::meanSum_AAA()
 
   inv_AAA_sumsum = 1 / AAA_sumsum;
 
-  if (DEBUG_LOG_LEVEL > 1 && screen && me == work_me) fprintf(screen, "#atom  AAA_sum1D\n");
+  if (DEBUG_LOG_LEVEL > 1 && me == work_me) utils::logmesg(lmp, "#atom  AAA_sum1D\n");
   if (Smatrix_flag == false) {
     for (size_t i = 0; i < localGA_num; i++) {
 #ifndef CONP_NO_DEBUG
-      if (DEBUG_LOG_LEVEL > 1 && screen && me == work_me) fprintf(screen, "%lu %.16f\n", i, AAA_sum1D[i]);
+      if (DEBUG_LOG_LEVEL > 1 && me == work_me) utils::logmesg(lmp, "{} {:.16f}\n", i, AAA_sum1D[i]);
 #endif
       AAA_sum1D[i] *= inv_AAA_sumsum;
     }
   }
-  if (me == 0 and screen) fprintf(screen, "[ConpGA] inv_AAA_sumsum = %20.16f from inverse method\n", inv_AAA_sumsum);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] inv_AAA_sumsum = {:.16f} from inverse method\n", inv_AAA_sumsum);
 }
 
 /* -------------------------------------------------------------------
@@ -7471,7 +7466,7 @@ void FixConpGA::meanSum_AAA()
 ------------------------------------------------------------------- */
 void FixConpGA::loadtxt_AAA()
 {
-  if (me == 0 and screen) fprintf(screen, "[ConpGA] Load AAA matrix from %s as txt file\n", AAA_save);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] Load text AAA matrix from {}\n", AAA_save);
   int* totalGA_tag_arr = &totalGA_tag.front();
   int oldtotalGA_num, itag, i_old_seq;
   int* oldtotalGA_tag_arr;
@@ -7540,7 +7535,7 @@ void FixConpGA::loadtxt_AAA()
 
     // reshuffle_flag = true;
     if (reshuffle_flag) {
-      if (me == 0 and screen) fprintf(screen, "[ConpGA] Read from A matrix file with reshuffle atom sequence!\n");
+      if (me == 0) utils::logmesg(lmp, "[ConpGA] Read from {} file with reshuffle mode!\n", AAA_save);
       for (i = 0; i < totalGA_num; i++) {
         i_new = oldtotalGA_tag_arr[i];
         for (j = 0; j < totalGA_num; j++) {
@@ -7552,7 +7547,7 @@ void FixConpGA::loadtxt_AAA()
       }
     } else {
       double* AAA_start = &AAA_Global[0][0];
-      if (me == 0 and screen) fprintf(screen, "[ConpGA] Read from A matrix file without reshuffle!\n");
+      if (me == 0) utils::logmesg(lmp, "[ConpGA] Read from {} without the reshuffle of matrix\n", AAA_save);
       for (size_t i = 0; i < totalGA_num * totalGA_num; i++) {
         if (!(myfile >> AAA_start[i]))
           error->all(FLERR, "[ConpGA] Invalid AAA matrix format, not enough "
@@ -7583,14 +7578,14 @@ void FixConpGA::loadtxt_AAA()
     }
   }
   meanSum_AAA();
-}
+} // loadtxt_AAA()
 
 /* -------------------------------------------------------------------
     Load AAA matrix and totalGA_tag from a binary file
 ------------------------------------------------------------------- */
 void FixConpGA::load_AAA()
 {
-  if (me == 0 and screen) fprintf(screen, "[ConpGA] Load AAA matrix from %s as binary file\n", AAA_save);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] Load binary Ewald matrix from {}\n", AAA_save);
   int* totalGA_tag_arr = &totalGA_tag.front();
   int oldtotalGA_num, itag, i_old_seq;
   int* oldtotalGA_tag_arr;
@@ -7600,7 +7595,7 @@ void FixConpGA::load_AAA()
   map<int, int> oldtotalGA_tag2seq;
   MAP_RESERVE(oldtotalGA_tag2seq, totalGA_num);
   char INFO[500];
-  double *AAA_tmp1D, **AAA_Global = NULL;
+  double *AAA_tmp1D, **AAA_Global = nullptr;
   bool reshuffle_flag = false;
 
   memory->create(AAA, localGA_num, totalGA_num, "FixConp/GA: AAA");
@@ -7614,18 +7609,19 @@ void FixConpGA::load_AAA()
     }
     */
     FILE* infile = fopen(AAA_save, "rb");
-    if (infile == NULL) {
+    if (infile == nullptr) {
       sprintf(INFO, "[ConpGA] Cannot open A matrix file: %.400s", AAA_save);
       error->all(FLERR, INFO);
     }
-    result = fread(&oldtotalGA_num, sizeof(int), 1, infile);
-    if (oldtotalGA_num != totalGA_num || result != 1) {
+
+    utils::sfread(FLERR, &oldtotalGA_num, sizeof(int), 1, infile, nullptr, error);
+    if (oldtotalGA_num != totalGA_num) {
       sprintf(INFO, "[ConpGA] Inconsistent total GA atom number Old: %d vs New: %d", oldtotalGA_num, totalGA_num);
       error->all(FLERR, INFO);
     }
 
-    result = fread(&g_ewald, sizeof(double), 1, infile);
-    result = fread(nn_pppm, sizeof(int), 3, infile);
+    utils::sfread(FLERR, &g_ewald, sizeof(double), 1, infile, nullptr, error);
+    utils::sfread(FLERR, nn_pppm, sizeof(int), 3, infile, nullptr, error);
     if (force->kspace) {
       if (fabs(1 - force->kspace->g_ewald / g_ewald) > 1e-12) {
         sprintf(INFO, "[ConpGA] Inconsistent kspace setup for %28.26f vs %f\n", g_ewald, force->kspace->g_ewald);
@@ -7640,8 +7636,8 @@ void FixConpGA::load_AAA()
 
     memory->create(oldtotalGA_tag_arr, totalGA_num, "FixConp/GA: oldtotalGA_tag_arr");
 
-    result = fread(oldtotalGA_tag_arr, sizeof(int), totalGA_num, infile);
-    if (result != totalGA_num) error->all(FLERR, "[ConpGA] Invalid AAA matrix format, not enough atoms");
+    utils::sfread(FLERR, oldtotalGA_tag_arr, sizeof(int), totalGA_num, infile, nullptr, error);
+    // if (result != totalGA_num) error->all(FLERR, "[ConpGA] Invalid AAA matrix format, not enough atoms");
 
     for (i = 0; i < totalGA_num; i++)
       oldtotalGA_tag2seq[oldtotalGA_tag_arr[i]] = i;
@@ -7664,16 +7660,16 @@ void FixConpGA::load_AAA()
     // reshuffle_flag = true;
     // printf("reshuffle_flag %d\n", reshuffle_flag);
     if (reshuffle_flag) {
-      if (me == 0 and screen) fprintf(screen, "[ConpGA] Read from A matrix file with reshuffle mode!\n");
+      if (me == 0) utils::logmesg(lmp, "[ConpGA] Read from {} file with reshuffle mode!\n", AAA_save);
 
       memory->create(AAA_tmp1D, totalGA_num, "FixConp/GA: AAA_tmp");
       for (i = 0; i < totalGA_num; i++) {
         i_new = oldtotalGA_tag_arr[i];
 
-        result = fread(&AAA_tmp1D[0], sizeof(double), totalGA_num, infile);
-        if (result != totalGA_num)
-          error->all(FLERR, "FixConp/GA: Invalid AAA matrix format, not enough "
-                            "AAA matrix elements");
+        utils::sfread(FLERR, &AAA_tmp1D[0], sizeof(double), totalGA_num, infile, nullptr, error);
+        // if (result != totalGA_num)
+        //  error->all(FLERR, "FixConp/GA: Invalid AAA matrix format, not enough "
+        //                    "AAA matrix elements");
 
         for (j = 0; j < totalGA_num; j++) {
           j_new                    = oldtotalGA_tag_arr[j];
@@ -7684,11 +7680,8 @@ void FixConpGA::load_AAA()
       memory->destroy(AAA_tmp1D);
 
     } else {
-      if (me == 0 and screen) fprintf(screen, "[ConpGA] Read %s without the reshuffle of matrix by atom index!\n", AAA_save);
-      result = fread(&AAA_Global[0][0], sizeof(double), totalGA_num * totalGA_num, infile);
-      if (result != totalGA_num * totalGA_num)
-        error->all(FLERR, "FixConp/GA: Invalid AAA matrix format, not enough "
-                          "AAA matrix elements");
+      if (me == 0) utils::logmesg(lmp, "[ConpGA] Read from {} without the reshuffle of matrix\n", AAA_save);
+      utils::sfread(FLERR, &AAA_Global[0][0], sizeof(double), totalGA_num * totalGA_num, infile, nullptr, error);
     }
     memory->destroy(oldtotalGA_tag_arr);
     // infile->close();
@@ -7711,6 +7704,7 @@ void FixConpGA::load_AAA()
 void FixConpGA::save_AAA()
 {
   if (me == 0) {
+    utils::logmesg(lmp, "[ConpGA] Save AAA matrix to binary {} file\n", AAA_save);
     FILE* outa                 = fopen(AAA_save, "wb");
     int* const totalGA_tag_arr = &totalGA_tag.front();
     double g_ewald             = 0.0;
@@ -7722,7 +7716,7 @@ void FixConpGA::save_AAA()
       nn_pppm[2] = force->kspace->nz_pppm;
     }
 
-    if (outa == NULL) {
+    if (outa == nullptr) {
       char INFO[500];
       sprintf(INFO, "[ConpGA] Cannot open A matrix file: %.400s", AAA_save);
       error->all(FLERR, INFO);
@@ -7742,8 +7736,7 @@ void FixConpGA::save_AAA()
       fclose(outa);
     }
   }
-  if (me == 0 and screen) fprintf(screen, "[ConpGA] Save AAA matrix to %s as a binary file\n", AAA_save);
-}
+} // save_AAA()
 
 /* ------------------------------------------------------------------
  Save AAA matrix and totalGA_tag into a txt format file (*.txtdat)
@@ -7751,7 +7744,7 @@ void FixConpGA::save_AAA()
 void FixConpGA::savetxt_AAA()
 {
   if (me == 0) {
-    if (screen) fprintf(screen, "[ConpGA] Save AAA matrix to %s as a txt file\n", AAA_save);
+    utils::logmesg(lmp, "[ConpGA] Save AAA matrix to text {} file\n", AAA_save);
     FILE* outa                 = fopen(AAA_save, "w");
     int* const totalGA_tag_arr = &totalGA_tag.front();
 
@@ -7764,7 +7757,7 @@ void FixConpGA::savetxt_AAA()
       nn_pppm[2] = force->kspace->nz_pppm;
     }
 
-    if (outa == NULL) {
+    if (outa == nullptr) {
       char INFO[500];
       sprintf(INFO, "[ConpGA] Cannot open A matrix file: %.400s", AAA_save);
       error->all(FLERR, INFO);
@@ -7797,7 +7790,7 @@ void FixConpGA::savetxt_AAA()
       fclose(outa);
     }
   }
-}
+} // savetxt_AAA()
 
 /* --------------------------------------------------------------------------
    Calulcate the real space Couloubic interaction between GA<->GA via:
@@ -8231,23 +8224,19 @@ void FixConpGA::setup_GG_Flag()
     zero_solution_check();
   }
 
-  if (GA2GA_flag == true && tol_style == TOL_REL_B) {
+  if (GA2GA_flag == true && tol_style == TOL::REL_B) {
     ; // error->all(FLERR, "relative B0 model is only suitable for GA2GA_flag == False.");
   }
 
-  if (minimizer != MIN_INV) {
+  if (minimizer != MIN::INV) {
 
     // GA2GA_flag = false;
   }
-  if (GA2GA_flag) {
-    if (me == 0 and screen)
-      fprintf(screen, "[ConpGA] Solving Eq=b with    GA<->GA interaction, "
-                      "selfGG_Flag = True.\n");
-  } else {
-    if (me == 0 and screen)
-      fprintf(screen, "[ConpGA] Solving Eq=b without GA<->GA interaction, "
-                      "selfGG_Flag = False.\n");
-  }
+  if (me == 0)
+    utils::logmesg(lmp,
+                   "[ConpGA] Solving Eq=b with    GA<->GA interaction, "
+                   "selfGG_Flag = {}.\n",
+                   GA2GA_flag);
 }
 
 /* --------------------------------------
@@ -8391,7 +8380,7 @@ void FixConpGA::fix_localGA_pairenergy_flag(bool GG_Flag, bool to_GA_Flag)
 void FixConpGA::localGA_neigh_build()
 {
   FUNC_MACRO(0);
-  if (list == NULL) {
+  if (list == nullptr) {
     list = force->pair->list;
     // printf("Set list to %x\n", list);
   }
@@ -8405,7 +8394,7 @@ void FixConpGA::localGA_neigh_build()
   double** x      = atom->x;
   double* q       = atom->q; // *ecoul_ptr;
   double* cl_atom = electro->cl_atom();
-  double* ek_atom = NULL;
+  double* ek_atom = nullptr;
   if (force->kspace) ek_atom = force->kspace->eatom;
   int ilocalGA = 0, numneigh_GA, numlocalneigh_GA, numghostneigh_GA, localGA_firstneigh_STLlist_size;
 
@@ -8459,11 +8448,11 @@ void FixConpGA::localGA_neigh_build()
   // printf("CPU: %d nlocal: %d\n", me, nlocal);
   // for(i = 0; i < nlocal; ++i){
   // for(ii = 0; ii < inum; ++ii){
-  if (me == 0 && screen)
-    fprintf(screen,
-            "[ConpGA] localGA_neigh_build() pcg_cut = %f from [%f+%f] "
-            "pcg_cutsq = %f\n",
-            pcg_cut, cut_coul, cut_coul_add, pcg_cutsq);
+  if (me == 0)
+    utils::logmesg(lmp,
+                   "[ConpGA] localGA_neigh_build() pcg_cut = {:f} from [{:f}+{:f}] "
+                   "pcg_cutsq = {:f}\n",
+                   pcg_cut, cut_coul, cut_coul_add, pcg_cutsq);
 
   localGA_numneigh_max = 0;
   for (ii = 0; ii < localGA_num; ++ii) {
@@ -8509,7 +8498,7 @@ void FixConpGA::localGA_neigh_build()
       rsq  = delx * delx + dely * dely + delz * delz;
       // skipp pair distance > cut_coulsq
       // if (rsq < pcg_cutsq)
-      if (pcg_mat_sel != FULL && rsq > pcg_cutsq) continue;
+      if (pcg_mat_sel != PCG_MAT::FULL && rsq > pcg_cutsq) continue;
 
       pcg_neighbor_size_local++;
       // printf("%d %d %f/%f\n", i, j, rsq, cut_coulsq);
@@ -8554,7 +8543,7 @@ void FixConpGA::localGA_neigh_build()
     // numghostneigh_GA); if (me == work_me) printf("%d %d %d|",
     // numlocalneigh_GA, numghostneigh_GA, numlocalneigh_GA + numghostneigh_GA);
   } // ii
-  if (me == 0 && screen) fprintf(screen, "[ConpGA] The maximum number of neighbors is: %d\n", localGA_numneigh_max);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] The maximum number of neighbors is: {}\n", localGA_numneigh_max);
 
   // for(ii = 0; ii < inum; ++ii){
   /*
@@ -8685,7 +8674,7 @@ void FixConpGA::calc_env_alpha()
 {
   int M                       = env_Umat.size(), i, j;
   double* const env_alpha_arr = &env_alpha.front();
-  double *Umat = NULL, *Umat_1D = NULL, *Umat_1D_total = NULL;
+  double *Umat = nullptr, *Umat_1D = nullptr, *Umat_1D_total = nullptr;
   const int* const size_EachProc = &localGA_EachProc.front();
   const int* const size_Dipl     = &localGA_EachProc_Dipl.front();
 
@@ -8707,7 +8696,7 @@ void FixConpGA::calc_env_alpha()
       Umat[i + j * M] = Umat_1D_total[j];
     }
   }
-  Umat_1D = NULL;
+  Umat_1D = nullptr;
 
   if (me == 0) {
     int max_size = M > totalGA_num ? M : totalGA_num;
@@ -8719,7 +8708,7 @@ void FixConpGA::calc_env_alpha()
     // write_mat(Umat_1D_total, totalGA_num, "Umat_1D_solution.mat");
     memory->destroy(Umat);
   }
-  Umat             = NULL;
+  Umat             = nullptr;
   __env_alpha_flag = false;
 }
 void FixConpGA::equalize_Q()
@@ -8745,7 +8734,7 @@ void FixConpGA::equalize_Q()
   // norm_mat_p(cl_atom, localGA_num, "Comm..");
   t_begin0 = clock();
   electro->pair_SOLtoGA(GA2GA_flag);
-  electro->calc_GA_potential(1, 1, true);
+  electro->calc_GA_potential(STAT::POT, STAT::POT, SUM_OP::ON);
   update_P_time += double(clock() - t_begin0) / CLOCKS_PER_SEC;
 
   // Extra force calculation in real and kspace are necessary//
@@ -8759,19 +8748,19 @@ void FixConpGA::equalize_Q()
       $\Delta q_i$ is the change of the charge quantity on $i$th electrode atom.
   */
   switch (minimizer) {
-    case MIN_INV:
+    case MIN::INV:
       update_charge_AAA();
       break;
-    case MIN_CG:
+    case MIN::CG:
       update_charge_cg();
       break;
-    case MIN_PCG:
+    case MIN::PCG:
       update_charge_pcg();
       break;
-    case MIN_PCG_EX:
+    case MIN::PCG_EX:
       update_charge_ppcg();
       break;
-    case MIN_NONE:;
+    case MIN::NONE:;
       break;
     default:
       error->all(FLERR, "Illegal fix conp command for unknown minimization method");
@@ -8805,7 +8794,7 @@ void FixConpGA::pre_force(int vflag)
   update_P_time += double(clock() - t_begin0) / CLOCKS_PER_SEC;
 
   // B0_refresh_time = 3;
-  if (tol_style == TOL_REL_B && update->ntimestep > 0) {
+  if (tol_style == TOL::REL_B && update->ntimestep > 0) {
 #ifndef CONP_NO_DEBUG
     calc_B0(B0_next);
     force_clear();
@@ -8845,8 +8834,8 @@ void FixConpGA::pre_force(int vflag)
   }
 
   // t_end = clock();
-  // if (me == work_me and screen) fprintf(screen, "Time Elps for energy min
-  // %8.5f\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
+  // if (me == work_me) utils::logmesg(lmp, "Time Elps for energy min
+  // {:8.5f}\n", double(t_end - t_begin) / CLOCKS_PER_SEC);
   // printf("[4]fz2001 = %g\n", f[2000][0]);
 
   /*for (size_t i = 0; i < ntotal; i++)
@@ -8874,7 +8863,7 @@ void FixConpGA::pre_force(int vflag)
   printf("epair: %f %f\n", epair[0], epair[1]);
   printf("epair: %f %f\n", eatom[0], eatom[1]);
   */
-  // class Pair *pair = NULL;
+  // class Pair *pair = nullptr;
   // pair = force->pair_match("lj/cut/gauss/long",1);
   // double fforce, energy;
   /*
@@ -8919,13 +8908,13 @@ void FixConpGA::pre_force(int vflag)
   if (vflag != -1) {
     Ele_iter++;
     switch (Ele_Cell_Model) {
-      case CELL_POT_CONTROL:
+      case CELL::POT:
         for (int i = 0; i < Ele_num; i++) {
           Ele_qave[i] += Ele_qsum[i];
           Ele_qsq[i] += Ele_qsum[i] * Ele_qsum[i];
         }
         break;
-      case CELL_Q_CONTROL:
+      case CELL::Q:
         double Uchem0 = Ele_Uchem[0];
         for (int i = 0; i < Ele_num; i++) {
           double dU = Ele_Uchem[i] - Uchem0;

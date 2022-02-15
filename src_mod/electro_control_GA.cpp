@@ -22,8 +22,6 @@
 
 // #define CONP_NO_DEBUG
 const char name_stat[2][10] = {"Energy", "Potential"};
-enum { E, POT };
-enum { POT_TO_E = -1, NIL, E_TO_POT };
 
 using namespace LAMMPS_NS;
 // Allocate the class Electro_Control_GA
@@ -38,8 +36,8 @@ Electro_Control_GA::Electro_Control_GA(LAMMPS* lmp, FixConpGA* fixPtr0)
   FIX              = fixPtr0;
   FIX_groupbit     = FIX->groupbit;
   me               = comm->me;
-  ek_stat          = 0;
-  cl_stat          = 0;
+  ek_stat          = STAT::E;
+  cl_stat          = STAT::E;
   compute_id       = 0;
   pair             = dynamic_cast<Pair_CONP_GA*>(force->pair);
   kspace           = dynamic_cast<KSpaceConpGA*>(force->kspace);
@@ -64,11 +62,11 @@ void Electro_Control_GA::compute_GAtoGA()
   FUNC_MACRO(0);
   if (kspace_conp_Flag && DEBUG_GAtoGA) {
     kspace->compute_GAtoGA();
-    ek_stat = POT;
+    ek_stat = STAT::POT;
   } else {
     force->kspace->qsum_qsq();
     force->kspace->compute(3, 0);
-    ek_stat = E;
+    ek_stat = STAT::E;
   }
 }
 
@@ -77,11 +75,11 @@ void Electro_Control_GA::compute_SOLtoGA(bool GG_Flag)
   FUNC_MACRO(0);
   if (kspace_conp_Flag && DEBUG_SOLtoGA) {
     kspace->compute_SOLtoGA(GG_Flag);
-    ek_stat = POT;
+    ek_stat = STAT::POT;
   } else {
     force->kspace->qsum_qsq();
     force->kspace->compute(3, 0);
-    ek_stat = E;
+    ek_stat = STAT::E;
   }
   /*
   double norm0 = FIX->check_atomvec(eatom, "kspace->compute");
@@ -126,7 +124,7 @@ void Electro_Control_GA::calc_qsqsum_SOL()
   MPI_Allreduce(&qsum_local, &qsum_SOL, 1, MPI_DOUBLE, MPI_SUM, world);
   MPI_Allreduce(&qsqsum_local, &qsqsum_SOL, 1, MPI_DOUBLE, MPI_SUM, world);
   if (me == 0) {
-    fprintf(screen, "qsum = %.10f; qsqsum = %.10f\n", qsum_SOL, qsqsum_SOL);
+    utils::logmesg(lmp, "qsum = {:.10f}; qsqsum = {:.10f}\n", qsum_SOL, qsqsum_SOL);
   }
 }
 
@@ -317,20 +315,19 @@ int* Electro_Control_GA::setup_comm(int* all_ghostGA_ind)
     }
   }
   nswap = iswap;
-  if (DEBUG_LOG_LEVEL > 0 && screen) {
+  if (DEBUG_LOG_LEVEL > 0) {
     for (int iproc = 0; iproc < nprocs; iproc++) {
       if (me == iproc) {
-        fprintf(screen, "[Debug] Proc_id: %d\n", iproc);
-        fprintf(screen, "Sendlist: ");
+        utils::logmesg(lmp, "[Debug] Proc_id: {}\n", iproc);
+        utils::logmesg(lmp, "Sendlist: ");
         for (int i = 0; i < nswap; i++) {
-          fprintf(screen, "%d[%d] ", sendnum[i], sendproc[i]);
+          utils::logmesg(lmp, "{}[{}] ", sendnum[i], sendproc[i]);
         }
-        fprintf(screen, "\n");
-        fprintf(screen, "Recvlist: ");
+        utils::logmesg(lmp, "\nRecvlist: ");
         for (int i = 0; i < nswap; i++) {
-          fprintf(screen, "%d[%d] ", recvnum[i], sendproc[i]);
+          utils::logmesg(lmp, "{}[{}] ", recvnum[i], sendproc[i]);
         }
-        fprintf(screen, "Total %d\n", recvnum_disp[nprocs]);
+        utils::logmesg(lmp, "Total: {}\n", recvnum_disp[nprocs]);
       }
       MPI_Barrier(world);
       /* code */
@@ -488,27 +485,30 @@ void Electro_Control_GA::unpack_reverse_comm(int pflag, int n, int* list, double
                                  2 with Pot combined to cl_atom and E combined to ek_atom
 ----------------------------------------------------------------- */
 
-void Electro_Control_GA::calc_GA_potential(int cl_stat_new, int ek_stat_new, int sum_op)
+void Electro_Control_GA::calc_GA_potential(STAT cl_stat_new, STAT ek_stat_new, SUM_OP sum_op)
 {
   // OP: {0, NIL}, {1: PE->Potential}, {2: Potential->PE}
   // printf("ek_stat = %d\n", ek_stat);
-  if (me == 0 && screen && DEBUG_LOG_LEVEL > 1)
-    fprintf(screen, "[Debug] U<=>POT conv. {cl: %d=>%d} {ek: %d=>%d} sum_op %d\n", cl_stat, cl_stat_new, ek_stat, ek_stat_new, sum_op);
+  if (me == 0 && DEBUG_LOG_LEVEL > 1)
+    utils::logmesg(lmp, "[Debug] U<=>POT conv. {cl: {}=>{}} {ek: {}=>{}} sum_op {}\n", cl_stat, cl_stat_new, ek_stat, ek_stat_new, sum_op);
 
-  if (sum_op != 2) {
-    int cl_op = (3 + cl_stat_new - cl_stat) % 3;
-    int ek_op = (3 + ek_stat_new - ek_stat) % 3;
-    if (sum_op && cl_stat_new != ek_stat_new) {
-      if (me == 0 && screen) fprintf(screen, "Sum between cl{%d: %s} vs ek{%d: %s}\n", cl_stat, name_stat[cl_stat], ek_stat, name_stat[ek_stat]);
+  if (sum_op != SUM_OP::BOTH) {
+    int cl_op        = (3 + static_cast<int>(cl_stat_new) - static_cast<int>(cl_stat)) % 3;
+    int ek_op        = (3 + static_cast<int>(ek_stat_new) - static_cast<int>(ek_stat)) % 3;
+    bool sum_op_flag = sum_op == SUM_OP::ON;
+    if (sum_op_flag && cl_stat_new != ek_stat_new) {
+      if (me == 0)
+        utils::logmesg(lmp, "Sum between cl{{}: {}} vs ek{{}: {}}\n", cl_stat, name_stat[static_cast<int>(cl_stat)], ek_stat,
+                       name_stat[static_cast<int>(ek_stat)]);
       error->all(FLERR, "inconsistent sum type!");
     }
-    conv_GA_potential(cl_op, ek_op, sum_op);
+    conv_GA_potential(cl_op, ek_op, sum_op_flag);
     ek_stat = ek_stat_new;
     cl_stat = cl_stat_new;
   } else {
     conv_GA_potential_both(cl_stat, ek_stat);
-    cl_stat = E;
-    ek_stat = POT;
+    cl_stat = STAT::E;
+    ek_stat = STAT::POT;
   }
 }
 
@@ -529,7 +529,7 @@ void Electro_Control_GA::pair_GAtoGA()
     pair->pair_GAtoGA_energy(FIX_groupbit, POT_Flag);
   }
   FIX->comm_REV_COUL_RM();
-  cl_stat = POT_Flag ? POT : E;
+  cl_stat = POT_Flag ? STAT::POT : STAT::E;
 }
 
 void Electro_Control_GA::pair_SOLtoGA(bool GG_Flag)
@@ -545,12 +545,13 @@ void Electro_Control_GA::pair_SOLtoGA(bool GG_Flag)
   }
   FIX->comm_REV_COUL_RM();
   // printf("End of using FIX->fix_pair_compute\n");
-  cl_stat = POT_Flag ? POT : E;
+  cl_stat = POT_Flag ? STAT::POT : STAT::E;
 }
 
-void Electro_Control_GA::conv_GA_potential_both(int cl_stat, int ek_stat)
+void Electro_Control_GA::conv_GA_potential_both(STAT cl_stat, STAT ek_stat)
 {
-  int all_op            = cl_stat + 2 * ek_stat;
+  // Save both electrostatic energy and potential to cl_atom and ek_atom, respectively.
+  int all_op            = static_cast<int>(cl_stat) + 2 * static_cast<int>(ek_stat);
   int* const GA_seq_arr = &FIX->localGA_seq.front();
   int localGA_num       = FIX->localGA_num;
   int i, iseq;
@@ -559,8 +560,9 @@ void Electro_Control_GA::conv_GA_potential_both(int cl_stat, int ek_stat)
   double* cl_atom = pair->cl_atom;
   double *q       = atom->q, qtmp, u_tmp, pe_tmp;
 
-  if (me == 0 && screen && DEBUG_LOG_LEVEL > 1)
-    fprintf(screen, "[Debug] Both sv_Op{%d} from cl_stat = {%d: %s} ek_stat = {%d: %s} \n", all_op, cl_stat, name_stat[cl_stat], ek_stat, name_stat[ek_stat]);
+  if (me == 0 && DEBUG_LOG_LEVEL > 1)
+    utils::logmesg(lmp, "[Debug] Both sv_Op{{{}}} from cl_stat = {{{}: {}}} ek_stat = {{{}: {}}} \n", all_op, cl_stat, name_stat[static_cast<int>(cl_stat)],
+                   ek_stat, name_stat[static_cast<int>(ek_stat)]);
   switch (all_op) {
     case 0 + 0:
       for (i = 0; i < localGA_num; i++) {
@@ -602,9 +604,9 @@ void Electro_Control_GA::conv_GA_potential_both(int cl_stat, int ek_stat)
       };
       break;
     default:
-      if (me == 0 && screen)
-        fprintf(screen, "[Debug] invalid sv_Op{%d} from cl_stat = {%d: %s} ek_stat = {%d: %s} \n", all_op, cl_stat, name_stat[cl_stat], ek_stat,
-                name_stat[ek_stat]);
+      if (me == 0)
+        utils::logmesg(lmp, "[Debug] invalid sv_Op{{{}}} from cl_stat = {{{}: {}}} ek_stat = {{{}: {}}} \n", all_op, cl_stat,
+                       name_stat[static_cast<int>(cl_stat)], ek_stat, name_stat[static_cast<int>(ek_stat)]);
       error->all(FLERR, "unkown type!");
       break;
   }
@@ -633,7 +635,7 @@ void Electro_Control_GA::conv_GA_potential(int cl_op, int ek_op, bool sum_op)
   double* cl_atom = pair->cl_atom;
   double *q       = atom->q, qtmp;
   int all_op      = cl_op + (3 * ek_op) + (9 * sum_op);
-  if (me == 0 && screen && DEBUG_LOG_LEVEL > 1) fprintf(screen, "[Debug] all_op[%d] with cl_op = %d ek_op = %d and sum_op %d\n", all_op, cl_op, ek_op, sum_op);
+  if (me == 0 && DEBUG_LOG_LEVEL > 1) utils::logmesg(lmp, "[Debug] all_op[{}] with cl_op = {} ek_op = {} and sum_op {}\n", all_op, cl_op, ek_op, sum_op);
   switch (all_op) {
     case 0 + 0:
       break;
@@ -752,7 +754,7 @@ void Electro_Control_GA::conv_GA_potential(int cl_op, int ek_op, bool sum_op)
       };
       break;
     default:
-      if (me == 0 && screen) fprintf(screen, "invalid all_op[%d] with cl_op = %d ek_op = %d and sum_op %d\n", all_op, cl_op, ek_op, sum_op);
+      if (me == 0) utils::logmesg(lmp, "invalid all_op[{}] with cl_op = {} ek_op = {} and sum_op {}\n", all_op, cl_op, ek_op, sum_op);
       error->all(FLERR, "unkown type!");
       break;
   }
@@ -763,10 +765,10 @@ void Electro_Control_GA::compute(int eflag, int vflag)
   FUNC_MACRO(1);
   if (kspace_conp_Flag) {
     return force->kspace->compute(eflag, vflag); // TODO  implement kspace->compute
-    ek_stat = E;
+    ek_stat = STAT::E;
   } else {
     return force->kspace->compute(eflag, vflag);
-    ek_stat = E;
+    ek_stat = STAT::E;
   }
 }
 

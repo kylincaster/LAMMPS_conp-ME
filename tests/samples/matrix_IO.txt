@@ -117,7 +117,7 @@ variable		  pe_1 equal c_pe[1]
 
 fix				  conp all null_print
 thermo_style      custom v_FFF c_avesq_z c_avesq_pe c_avesq_fz c_q0 c_q1 c_ions_q2 c_GAlo_q2 c_GAhi_q2 f_conp v_prun
-thermo_modify 		format line "%.0f %.3f %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e %16.20e"
+thermo_modify 		format line "%.0f %g %g %g %g %g %g %g %g %g %g %d" 
 #un				  0
 unfix			  conp
 

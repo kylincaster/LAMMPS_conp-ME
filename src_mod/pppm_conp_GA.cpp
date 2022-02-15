@@ -462,8 +462,8 @@ void PPPM_conp_GA::setup_FIX(int groupbit)
 void PPPM_conp_GA::setup_GA2rho()
 {
   FUNC_MACRO(0);
-  // if(me == 0 and screen) fprintf(screen, "[ConpGA] setup_GA2rho() from
-  // pppm_conp/GA\n"); if (GA2rho) { return; }
+  // if(me == 0) utils::logmesg(lmp,"[ConpGA] setup_GA2rho() from pppm_conp/GA\n");
+  // if (GA2rho) { return; }
   FixConpGA* FIX = electro->FIX;
   double **x     = atom->x, dx, dy, dz;
   int iGA, i, l, nx, ny, nz, iGA3;

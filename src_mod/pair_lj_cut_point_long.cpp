@@ -59,8 +59,6 @@ using namespace LAMMPS_NS;
 using namespace MathConst;
 using namespace MathSpecial;
 
-enum { P_CHARGE, G_CHARGE };
-enum { NO_SELF, ONLY_SELF, MIXTURE };
 /* ---------------------------------------------------------------------- */
 
 PairLJCutPointLong::PairLJCutPointLong(LAMMPS* lmp) : Pair(lmp)
@@ -180,7 +178,7 @@ void PairLJCutPointLong::settings(int narg, char** arg)
   // in eta_mix_table, Zero mean P <-> P interaction.
   for (int i = 0; i <= n; ++i) {
     eta[i] = sigma_width[i] = self_Greenf[i] = 0;
-    isGCharge[i]                             = 0;
+    isGCharge[i]                             = CHARGE::POINT;
     for (int j = 0; j <= n; ++j) {
       eta_mix_table[i][j] = 0;
     }
@@ -200,7 +198,7 @@ void PairLJCutPointLong::settings(int narg, char** arg)
         error->all(FLERR, "Illegal inverse Guassian distribution width (only "
                           "value for eta > 0)!");
       if (me == 0) utils::logmesg(lmp, "Set type[{}] as Gauss charge;\n", atype);
-      isGCharge[atype]   = G_CHARGE;
+      isGCharge[atype]   = CHARGE::GAUSSIAN;
       eta[atype]         = value;
       sigma_width[atype] = 1 / sqrt(value * value * 2);
       self_Greenf[atype] = eta[atype] / MY_SQRT2;
@@ -220,7 +218,7 @@ void PairLJCutPointLong::settings(int narg, char** arg)
       if (me == 0) utils::logmesg(lmp, "Set type[{}] as Point charge;\n", atype);
 
       // value = 0;
-      isGCharge[atype]   = P_CHARGE;
+      isGCharge[atype]   = CHARGE::POINT;
       eta[atype]         = 0;
       sigma_width[atype] = 0;
       self_Greenf[atype] = value / MY_SQRT2;
@@ -238,11 +236,11 @@ void PairLJCutPointLong::settings(int narg, char** arg)
         error->all(FLERR, "Illegal inverse Guassian distribution width (only "
                           "value for eta > 0)!");
       if (value > 1e30) {
-        isGCharge[atype] = P_CHARGE;
+        isGCharge[atype] = CHARGE::POINT;
         value            = 0;
         if (me == 0) utils::logmesg(lmp, "Set type[{}] as Point charge, ", atype);
       } else {
-        isGCharge[atype] = G_CHARGE;
+        isGCharge[atype] = CHARGE::GAUSSIAN;
         if (me == 0) utils::logmesg(lmp, "Set type[{}] as Gauss charge, ", atype);
       }
       eta[atype]         = value;
@@ -365,7 +363,7 @@ void PairLJCutPointLong::init_special_tables()
   memory->create(Atype_to_GIndex, n + 1, "pair:Atype_to_GIndex");
   n_gauss = 1;
   for (size_t i = 1; i <= n; i++) {
-    if (isGCharge[i] != 0) {
+    if (isGCharge[i] != CHARGE::POINT) {
       GIndex_to_Atype[n_gauss] = i;
       Atype_to_GIndex[i]       = n_gauss;
       n_gauss++;
@@ -474,7 +472,7 @@ void PairLJCutPointLong::init_special_tables()
     for (j = 1; j <= n; j++) {
       idx_ij = i * (n + 1) + j;
       idx_ji = j * (n + 1) + i;
-      if (isGCharge[i] == 1 && isGCharge[j] == 1) {
+      if (isGCharge[i] == CHARGE::GAUSSIAN && isGCharge[j] == CHARGE::GAUSSIAN) {
         // printf("idx_ij = %d; idx_ji = %d;\n", idx_ij, idx_ji);
         if (ftable_vec[idx_ji] == nullptr || ftable_vec[idx_ij] == nullptr) {
           error->all(FLERR, "No table loopup for Lj/Cut/Gauss/long without Kspace style!");
@@ -483,9 +481,9 @@ void PairLJCutPointLong::init_special_tables()
       } else {
         // GIndex of [1,n_gauss] are also the columns of
         // P<->G interaction in table_list
-        if (isGCharge[i] == 1) {
+        if (isGCharge[i] == CHARGE::GAUSSIAN) {
           idx = Atype_to_GIndex[i];
-        } else if (isGCharge[j] == 1) {
+        } else if (isGCharge[j] == CHARGE::GAUSSIAN) {
           idx = Atype_to_GIndex[j];
         } else {
           idx = 0; // P<->P interaction in the 0th column
@@ -931,7 +929,7 @@ void PairLJCutPointLong::compute_Gauss_Group(int eflag, int vflag, int FIX_group
             forcecoul = prefactor * (erfc + MY_ISPI4 * grij * expm2);
 
             // P <-> P interaction
-            if (isGCharge[itype] == P_CHARGE && isGCharge[jtype] == P_CHARGE) {
+            if (isGCharge[itype] == CHARGE::POINT && isGCharge[jtype] == CHARGE::POINT) {
               gauss_erfc = 0;
               if (factor_coul < 1.0) forcecoul -= (1.0 - factor_coul) * prefactor;
               // P <-> G or G <-> G interacion
@@ -991,7 +989,7 @@ void PairLJCutPointLong::compute_Gauss_Group(int eflag, int vflag, int FIX_group
             if (!ncoultablebits || rsq <= tabinnersq) {
               ecoul = prefactor * (erfc - factor_coul * gauss_erfc);
             } else {
-              if (isGCharge[itype] == P_CHARGE && isGCharge[jtype] == P_CHARGE) {
+              if (isGCharge[itype] == CHARGE::POINT && isGCharge[jtype] == CHARGE::POINT) {
                 table = etable[itable] + fraction * detable[itable];
                 ecoul = qiqj * table;
               } else {
@@ -1274,7 +1272,7 @@ void PairLJCutPointLong::compute_Gauss(int eflag, int vflag)
             forcecoul = prefactor * (erfc + MY_ISPI4 * grij * expm2);
 
             // P <-> P interaction
-            if (isGCharge[itype] == P_CHARGE && isGCharge[jtype] == P_CHARGE) {
+            if (isGCharge[itype] == CHARGE::POINT && isGCharge[jtype] == CHARGE::POINT) {
               gauss_erfc = 0;
               if (factor_coul < 1.0) forcecoul -= (1.0 - factor_coul) * prefactor;
               // P <-> G or G <-> G interacion
@@ -1334,7 +1332,7 @@ void PairLJCutPointLong::compute_Gauss(int eflag, int vflag)
             if (!ncoultablebits || rsq <= tabinnersq) {
               ecoul = prefactor * (erfc - factor_coul * gauss_erfc);
             } else {
-              if (isGCharge[itype] == P_CHARGE && isGCharge[jtype] == P_CHARGE) {
+              if (isGCharge[itype] == CHARGE::POINT && isGCharge[jtype] == CHARGE::POINT) {
                 table = etable[itable] + fraction * detable[itable];
                 ecoul = qiqj * table;
               } else {
@@ -1876,7 +1874,7 @@ double PairLJCutPointLong::pair_SOLtoGA_energy_Gauss(const int FIX_groupbit, con
           grij      = g_ewald * r;
           expm2     = expmsq(grij);
           erfc      = _my_erfcx(grij) * expm2; // grij > 0 with g_ewald > 0;
-          if (isGCharge[itype] == P_CHARGE && isGCharge[jtype] == P_CHARGE) {
+          if (isGCharge[itype] == CHARGE::POINT && isGCharge[jtype] == CHARGE::POINT) {
             gauss_erfc = 0;
           } else {
             guass_rij   = eta_mix_table[itype][jtype] * r;
@@ -2169,7 +2167,7 @@ double PairLJCutPointLong::pair_GAtoGA_energy_Gauss(const int FIX_groupbit, cons
           grij      = g_ewald * r;
           expm2     = expmsq(grij);
           erfc      = _my_erfcx(grij) * expm2; // grij > 0 with g_ewald > 0;
-          if (isGCharge[itype] == P_CHARGE && isGCharge[jtype] == P_CHARGE) {
+          if (isGCharge[itype] == CHARGE::POINT && isGCharge[jtype] == CHARGE::POINT) {
             gauss_erfc = 0;
           } else {
             guass_rij   = eta_mix_table[itype][jtype] * r;
@@ -2222,7 +2220,7 @@ double PairLJCutPointLong::compute_single(int itype, int jtype, double rsq)
       double grij      = g_ewald * r;
       double expm2     = expmsq(grij);
       double erfc      = _my_erfcx(grij) * expm2; // grij > 0 with g_ewald > 0;
-      if (isGCharge[itype] == P_CHARGE && isGCharge[jtype] == P_CHARGE) {
+      if (isGCharge[itype] == CHARGE::POINT && isGCharge[jtype] == CHARGE::POINT) {
         gauss_erfc = 0;
       } else {
         double guass_rij   = eta_mix_table[itype][jtype] * r;
@@ -2231,7 +2229,7 @@ double PairLJCutPointLong::compute_single(int itype, int jtype, double rsq)
       }
       ecoul = prefactor * (erfc - gauss_erfc);
     } else {
-      if (isGCharge[itype] == P_CHARGE && isGCharge[jtype] == P_CHARGE) {
+      if (isGCharge[itype] == CHARGE::POINT && isGCharge[jtype] == CHARGE::POINT) {
         union_int_float_t rsq_lookup;
         rsq_lookup.f = rsq;
         itable       = rsq_lookup.i & ncoulmask;
@@ -2478,7 +2476,7 @@ double PairLJCutPointLong::single(int i, int j, int itype, int jtype, double rsq
       erfc      = _my_erfcx(grij) * expm2;
       forcecoul = prefactor * (erfc + MY_ISPI4 * grij * expm2 - 1.0);
       // P <-> P interaction
-      if (isGCharge[itype] == P_CHARGE && isGCharge[jtype] == P_CHARGE) {
+      if (isGCharge[itype] == CHARGE::POINT && isGCharge[jtype] == CHARGE::POINT) {
         gauss_erfc = 0;
         if (factor_coul < 1.0) forcecoul -= (1.0 - factor_coul) * prefactor;
         // P <-> G or G <-> G interacion
@@ -2493,7 +2491,7 @@ double PairLJCutPointLong::single(int i, int j, int itype, int jtype, double rsq
       }
 
     } else {
-      if (isGCharge[itype] == P_CHARGE && isGCharge[jtype] == P_CHARGE) {
+      if (isGCharge[itype] == CHARGE::POINT && isGCharge[jtype] == CHARGE::POINT) {
         union_int_float_t rsq_lookup;
         rsq_lookup.f = rsq;
         itable       = rsq_lookup.i & ncoulmask;
@@ -2537,7 +2535,7 @@ double PairLJCutPointLong::single(int i, int j, int itype, int jtype, double rsq
       phicoul = prefactor * (erfc - factor_coul * gauss_erfc);
     else {
       // error->all(FLERR,"No table loopup for Lj/Cut/Gauss/long!");
-      if (isGCharge[itype] == P_CHARGE && isGCharge[jtype] == P_CHARGE) {
+      if (isGCharge[itype] == CHARGE::POINT && isGCharge[jtype] == CHARGE::POINT) {
         table   = etable[itable] + fraction * detable[itable];
         phicoul = qiqj * table;
       } else {

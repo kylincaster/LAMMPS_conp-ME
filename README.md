@@ -127,7 +127,7 @@ fix 		conp ele conp/GA 1 pcg charge 3 -0.5     charge 4 v_Q
 
 `neutrality [on/off]` = Switch to enforce the global electroneutrality for both electrode and electrolyte charges. *Default*: **on** 
 
-`Vext_update [on/off]` = Switch to updates the constraint values of `[U]` or `[Q]` during the simulation.  At `off` state, the constraint value is fixed, otherwise the constraint could be dynamically changed. For example, `metal 1 v_rG Vext_update on` would change the potential constraint on the 1st type of atoms. *Default*: **off**
+`Vext_update [on/off]` = Switch to updates the constraint values of `[U]` or `[Q]` during the simulation.  At `off` state, the constraint value is fixed, otherwise the constraint could be dynamically changed. For example, `metal 1 v_rG Vext_update on` would change the potential constraint on the 1^st^ type of atoms by the value of variable`rG`. Note that the constraint variable for `metal` or `charge` options could be per-atom one. Default: **off**
 
 ` Uchem_extract [on/off] ` = Switch to allow to remove the influence of the electroneutrality constraint. For example, at the constraint of $\pm0.5$ V for the cathode and anode, the potential on the electrodes would be $+0.7$ V and $-0.3$ V to meet the electroneutrality condition. The apply of `on` would shift the electrochemical potential for all charges that recovers the value of $+0.5$ V and $-0.5$ V on the cathode and anode, respectively.
 

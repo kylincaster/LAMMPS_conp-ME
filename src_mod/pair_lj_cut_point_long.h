@@ -73,7 +73,7 @@ public:
   double** eta_mix_table; // Guassian interaction factor width between different type
   double* sigma_width;    // Inverse Guassian distribution width for mixing
                           // 1/sqrt(value*value*2);
-  int* isGCharge;         // 0 for pure PCharge and 1 for Pcharge with self interaction
+  CHARGE* isGCharge;      // 0 for pure PCharge and 1 for Pcharge with self interaction
 
   int n_gauss, *n_gauss_type, n_plus;
   double **ftable_list, **dftable_list, **ctable_list;

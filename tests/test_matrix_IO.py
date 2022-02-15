@@ -31,12 +31,11 @@ class TestMatrix:
         config = config_orig.copy()
 
         config["mat_name"] = '"{} save"'.format(mat)
-        lw = config["multiRun_times"] * 3 + 1
+        lw = config["multiRun_times"] + 1
         result = run.run(config, lw=lw)
 
         config["mat_name"] = '"{} load"'.format(mat)
         result = run.run(config, core_num=core_num, lw=lw)
-        assert len(result) == config["multiRun_times"] * 3 + 1
         os.remove(mat)
 
     @pytest.mark.parametrize("mat", ["a.txtmat", "a.binmat"])
@@ -44,7 +43,7 @@ class TestMatrix:
         config = config_orig.copy()
         config["mat_name"] = '"{} none"'.format(mat)
         config["scalapack_num"] = 1
-        lw = config["multiRun_times"] * 3 + 1
+        lw = config["multiRun_times"] + 1
         result = run.run(config, lw=lw)
         # print(LAMMPS_IO.config)
 
