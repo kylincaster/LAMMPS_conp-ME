@@ -2609,6 +2609,8 @@ void FixConpGA::make_ELE_matrix_direct()
   if (me == 0 && DEBUG_LOG_LEVEL > 0) print_vec(Ele_matrix[0], Ele_num_sqr, "inv_Ele_matrix");
   inv_AAA_LAPACK(Ele_matrix[0], Ele_num);
   if (me == 0 && DEBUG_LOG_LEVEL > 0) print_vec(Ele_matrix[0], Ele_num_sqr, "Ele_matrix");
+#else
+  inv_AAA_LAPACK(Ele_matrix[0], Ele_num);
 #endif
 
   memory->destroy(totalGA_eleIndex);
@@ -2700,6 +2702,8 @@ void FixConpGA::make_ELE_matrix_iterative()
   if (me == 0 && DEBUG_LOG_LEVEL > 0) print_vec(Ele_matrix[0], Ele_num_sqr, "inv_Ele_matrix");
   inv_AAA_LAPACK(Ele_matrix[0], Ele_num);
   if (me == 0 && DEBUG_LOG_LEVEL > 0) print_vec(Ele_matrix[0], Ele_num_sqr, "Ele_matrix");
+#else
+  inv_AAA_LAPACK(Ele_matrix[0], Ele_num);
 #endif
 }
 // Transform the distributed AAA matrix into S matrix for neutral electrolyte

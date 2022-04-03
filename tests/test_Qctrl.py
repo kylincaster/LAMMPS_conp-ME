@@ -31,7 +31,7 @@ def test_binmat():
 
 
 class Test_INV:
-    def _test_inv(self):
+    def test_inv(self):
         config = config_save.copy()
         config["minimizer"] = "inv"
         result = run.run(config, 13)
