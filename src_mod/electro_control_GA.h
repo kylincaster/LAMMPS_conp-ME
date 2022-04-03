@@ -95,6 +95,8 @@ public:
     } else
       return kspace->type_name();
   }
+  STAT get_ek_stat() { return ek_stat; }
+  STAT get_cl_stat() { return cl_stat; }
 
   /*
   virtual void compute_vector(bigint *, double *) = 0;

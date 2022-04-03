@@ -37,6 +37,7 @@ region			  box  block 0 ${NX} 0 ${NY}  0 $(v_SLG_int+1)
 region			inbox  block 0 ${NX} 0 ${NY}  -$(v_SLG_int/2-2) $(v_SLG_int/2-3)
 
 create_box		  4 box
+atom_modify	      sort 10 0.0
 
 region			  box0 block 0 ${NX} 0 ${NY}  0  1
 region			  box1 block 0 ${NX} 0 ${NY} $(v_SLG_int) $(v_SLG_int+1)
@@ -69,7 +70,7 @@ neigh_modify 	  every 1 delay 0 check yes
 group			  SLG   type 1 2
 variable	      GA_qi equal  1
 
-kspace_style      pppm 1e-4
+kspace_style      ${kspace_style}
 kspace_modify	  mesh 8 8 15 gewald 0.225777 slab 3
 
 variable		  num equal count(all)
@@ -150,3 +151,4 @@ fix 			  2 ions move variable v_dx v_dy v_dz NULL NULL NULL units box
 run				  ${multi_run}
 
 run				  ${multi_run}
+unfix             conp

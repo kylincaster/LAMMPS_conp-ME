@@ -164,7 +164,7 @@ void Electro_Control_GA::setup()
   if (kspace) {
     kspace_conp_Flag = true;
     if (me == 0) {
-      utils::logmesg(lmp, "[ConpGA] using optimized electrostatic solver: %s\n", kspace->type_name());
+      utils::logmesg(lmp, "[ConpGA] using optimized electrostatic solver: {}\n", kspace->type_name());
     }
     kspace->electro         = this;
     kspace->DEBUG_LOG_LEVEL = DEBUG_LOG_LEVEL;
@@ -181,6 +181,8 @@ void Electro_Control_GA::setup()
 
 int* Electro_Control_GA::setup_comm(int* all_ghostGA_ind)
 {
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] Setup inner communicator\n");
+
   int nprocs = comm->nprocs;
   std::map<int, int> tag_to_proc;
   const int* const localGA_tag = &FIX->localGA_tag.front();
@@ -490,7 +492,7 @@ void Electro_Control_GA::calc_GA_potential(STAT cl_stat_new, STAT ek_stat_new, S
   // OP: {0, NIL}, {1: PE->Potential}, {2: Potential->PE}
   // printf("ek_stat = %d\n", ek_stat);
   if (me == 0 && DEBUG_LOG_LEVEL > 1)
-    utils::logmesg(lmp, "[Debug] U<=>POT conv. {cl: {}=>{}} {ek: {}=>{}} sum_op {}\n", cl_stat, cl_stat_new, ek_stat, ek_stat_new, sum_op);
+    utils::logmesg(lmp, "[Debug] U<=>POT conv. {{cl: {}=>{}}} {{ek: {}=>{}}} sum_op {}\n", cl_stat, cl_stat_new, ek_stat, ek_stat_new, sum_op);
 
   if (sum_op != SUM_OP::BOTH) {
     int cl_op        = (3 + static_cast<int>(cl_stat_new) - static_cast<int>(cl_stat)) % 3;
@@ -498,7 +500,7 @@ void Electro_Control_GA::calc_GA_potential(STAT cl_stat_new, STAT ek_stat_new, S
     bool sum_op_flag = sum_op == SUM_OP::ON;
     if (sum_op_flag && cl_stat_new != ek_stat_new) {
       if (me == 0)
-        utils::logmesg(lmp, "Sum between cl{{}: {}} vs ek{{}: {}}\n", cl_stat, name_stat[static_cast<int>(cl_stat)], ek_stat,
+        utils::logmesg(lmp, "Sum between cl{{{}: {}}} vs ek{{{}: {}}}\n", cl_stat, name_stat[static_cast<int>(cl_stat)], ek_stat,
                        name_stat[static_cast<int>(ek_stat)]);
       error->all(FLERR, "inconsistent sum type!");
     }
@@ -506,6 +508,7 @@ void Electro_Control_GA::calc_GA_potential(STAT cl_stat_new, STAT ek_stat_new, S
     ek_stat = ek_stat_new;
     cl_stat = cl_stat_new;
   } else {
+    // SUM_OP::BOTH
     conv_GA_potential_both(cl_stat, ek_stat);
     cl_stat = STAT::E;
     ek_stat = STAT::POT;
@@ -845,5 +848,13 @@ Electro_Control_GA::~Electro_Control_GA()
     }
     memory->sfree(sendlist);
     memory->sfree(recvlist);
+  }
+  if (pair != NULL) {
+    pair->DEBUG_LOG_LEVEL = 0;
+    pair->electro         = nullptr;
+  }
+  if (kspace_conp_Flag == true && kspace != nullptr) {
+    kspace->DEBUG_LOG_LEVEL = 0;
+    kspace->electro         = nullptr;
   }
 }

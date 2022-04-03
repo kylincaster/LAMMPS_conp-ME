@@ -20,7 +20,7 @@ variable		  CC_c equal 1/${CC}
 #ariable          NY   equal 11
 variable		  FFF  equal 0
 #ariable		  tol  equal 1e-14
-variable		  tol_first  equal 1
+variable		  tol_first  equal 0
 variable		  qS   equal 2
 variable	   	  num_ele equal ${NX}*${NY}
 #ariable		  multi_run_time equal 3
@@ -42,13 +42,13 @@ region			  box0 block 0 ${NX} 0 ${NY}  0  1
 region			  box1 block 0 ${NX} 0 ${NY} $(v_SLG_int) $(v_SLG_int+1)
 create_atoms	  1 region box0
 create_atoms	  2 region box1
-
+atom_modify	      sort 10 0.0
 
 variable		  lz equal lz
 variable		  lz equal ${lz}
 variable		  lz_half equal ${lz}/2
 change_box		  all z delta -${lz_half} -${lz_half} remap units box
-atom_modify	      sort 10 0.0
+
 
 variable		  eta_GA equal 2.93295072600296 # for GA with r_1nn = 1.42
 pair_style		  lj/cut/point/long 10.0 10.0 point 1 ${eta_GA}  point 2 ${eta_GA} ${pair_extra}
@@ -116,7 +116,7 @@ group             ME    type 3
 group             CLA   type 4
 group             ions  type 3 4
 set 			  group ME charge  +1
-set 			  group CLA charge -1
+set 			  group CLA charge +1
 # variable 		  prun equal ramp(${multi_run},0)%${runs}==0*ramp(${multi_run},0)%${}
 variable 		  prun equal abs(-ceil(ramp(0,-${multi_run})/${runs}))%${multiRun_times}
 
@@ -142,11 +142,12 @@ set 			  group GA_hi charge -$(v_qS*v_GA_qi)
 set 			  group GA_lo charge  $(v_qS*v_GA_qi)
 set 			  group GA_hi charge -$(v_qS*v_GA_qi)
 
-fix				conp SLG conp/GA ${conp_run} inv metal 1 -${U_cap} metal 2 ${U_cap} tol 1e-14 max 100 printf_me -1 matrix a.binmat auto symmetry off neutrality ${neutral} pair ${pair} bvec 1 units eV first ${first} check_first ${tol_first} ${tol} check on debug 0 selfGG ${selfGG} Smat ${Smat}
+fix				conp SLG conp/GA ${conp_run} ${cg_style} metal 1 -${U_cap} metal 2 ${U_cap} tol 1e-16 tol_style ${tol_style} max 100 printf_me -1 matrix a.binmat auto symmetry off neutrality ${neutral} pair ${pair} units eV first ${first} check_first ${tol_first} ${tol} check on debug 0 selfGG ${selfGG} pcg_mat ${pcg_mat} ${fixExtra}
 thermo_style      custom v_FFF c_avesq_z c_avesq_pe c_avesq_fz c_q0 c_q1 c_ions_q2 c_GAlo_q2 c_GAhi_q2 f_conp v_prun 
 thermo_modify 		format line "%.0f %g %g %g %g %g %g %g %g %g %g %d" 
 thermo 			  1 # ${runs}
 fix 			  2 ions move variable v_dx v_dy v_dz NULL NULL NULL units box
 run				  ${multi_run}
-
+unfix             conp
+fix			      conp SLG conp/GA ${conp_run} ${cg_style} metal 1 -${U_cap} metal 2 ${U_cap} tol 1e-16 tol_style ${tol_style} max 100 printf_me -1 matrix a.binmat auto symmetry off neutrality ${neutral} pair ${pair} units eV first ${first} check_first ${tol_first} ${tol} check on debug 0 selfGG ${selfGG} pcg_mat ${pcg_mat} ${fixExtra}
 run				  ${multi_run}

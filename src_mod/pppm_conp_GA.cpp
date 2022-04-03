@@ -2156,20 +2156,9 @@ void PPPM_conp_GA::calc_GA_POT(double qsum_group, bool GG_Flag)
   // return gradients (electric fields) in 3d brick decomposition
   // also performs per-atom calculations via poisson_peratom()
 
-  poisson();
-
-  // all procs communicate E-field values
-  // to fill ghost cells surrounding their 3d bricks
-
-  if (differentiation_flag == 1)
-    gc->forward_comm(GridComm::KSPACE, this, 1, sizeof(FFT_SCALAR), FORWARD_AD, gc_buf1, gc_buf2, MPI_FFT_SCALAR);
-  else
-    gc->forward_comm(GridComm::KSPACE, this, 3, sizeof(FFT_SCALAR), FORWARD_IK, gc_buf1, gc_buf2, MPI_FFT_SCALAR);
-
-  if (differentiation_flag == 1 && vflag_atom)
-    gc->forward_comm(GridComm::KSPACE, this, 6, sizeof(FFT_SCALAR), FORWARD_AD_PERATOM, gc_buf1, gc_buf2, MPI_FFT_SCALAR);
-  else if (differentiation_flag == 0)
-    gc->forward_comm(GridComm::KSPACE, this, 7, sizeof(FFT_SCALAR), FORWARD_IK_PERATOM, gc_buf1, gc_buf2, MPI_FFT_SCALAR);
+  // poisson();
+  poisson_ad();
+  gc->forward_comm(GridComm::KSPACE, this, 1, sizeof(FFT_SCALAR), FORWARD_AD, gc_buf1, gc_buf2, MPI_FFT_SCALAR);
 
   int iGA, iGA3;
   // extra per-atom energy/virial communication

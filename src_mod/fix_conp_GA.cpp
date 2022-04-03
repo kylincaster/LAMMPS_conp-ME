@@ -102,7 +102,7 @@ using namespace MathConst;
 enum { REV_Q, REV_COUL, REV_COUL_RM, REV_FORCE };
 
 // #define INTEL_MPI
-#define FIX_CONPGA_VERSION 1.66
+#define FIX_CONPGA_VERSION 1.68
 #define xstr(s) str(s)
 #define str(s) #s
 
@@ -374,6 +374,9 @@ iseq:
     tol_style       = TOL::REL_B;
     ppcg_invAAA_cut = 1.0e-4;
     pcg_shift_scale = 1;
+  } else if (strcmp(arg[4], "near") == 0) {
+    minimizer = MIN::NEAR;
+    tol_style = TOL::MAX_Q;
   } else if (strcmp(arg[4], "none") == 0) {
     minimizer = MIN::NONE;
     tol_style = TOL::REL_B;
@@ -1188,26 +1191,30 @@ void FixConpGA::post_run()
 {
   double inv_Ele_iter = 1.0 / Ele_iter;
   double double_qe2f  = 2 * force->qe2f;
+
   if (me == 0) {
     switch (Ele_Cell_Model) {
       case CELL::POT:
-        utils::logmesg(lmp, "\n---------- [Conp] Electrode charge fluctuation for {} invoking ---------------\n", Ele_iter);
+        if (update_Vext_flag) break;
+        utils::logmesg(lmp, "\n---------- [Conp] Electrode charge fluctuation for {} MD invoking ---------------\n", Ele_iter);
         for (int i = 0; i < Ele_num; i++) {
+          int iType    = Ele_To_aType[i];
           double q_ave = Ele_qave[i] * inv_Ele_iter;
           double q_std = sqrt(Ele_qsq[i] * inv_Ele_iter - q_ave * q_ave);
-          double U     = (localGA_Vext[i] - Uchem) * double_qe2f;
-          utils::logmesg(lmp, "[Ele{:2d}] <Q> = {:.12f}; std{Q} = {:.12f} @ Pot {:.6f} V\n", i + 1, q_ave, q_std, U);
+          double U     = (GA_Vext_var[iType] - Uchem) * double_qe2f; // GA  - Uchem
+          utils::logmesg(lmp, "[Ele{:2d}] <Q> = {:.12f}; std{{Q}} = {:.12f} @ Pot {:.6f} V\n", i + 1, q_ave, q_std, U);
         }
         utils::logmesg(lmp, "\n");
         for (int i = 0; i < Ele_num; i++) {
           double q_ave = Ele_qave[i] * inv_Ele_iter / Ele_GAnum[i];
           double q_std = sqrt(Ele_qsq[i] * inv_Ele_iter - q_ave * q_ave) / Ele_GAnum[i];
           double U     = (localGA_Vext[i] - Uchem) * double_qe2f;
-          utils::logmesg(lmp, "[Ele{:2d}] <q_i> = {:.12f}; std{q_i} = {:.12f}; Ele. Atom = {}\n", i + 1, q_ave, q_std, Ele_GAnum[i]);
+          utils::logmesg(lmp, "[Ele{:2d}] <q_i> = {:.12f}; std{{q_i}} = {:.12f}; Ele. Atom = {}\n", i + 1, q_ave, q_std, Ele_GAnum[i]);
         }
         utils::logmesg(lmp, "-------------End [Conp] Electrode charge fluctuation -------------\n\n");
         break;
       case CELL::Q:
+        if (update_Vext_flag) break;
         utils::logmesg(lmp, "\n---------- [Conp] Electrode Potential fluctuation for {} invoking ---------------\n", Ele_iter);
         for (int i = 0; i < Ele_num; i++) {
           int iType    = Ele_To_aType[i];
@@ -1215,7 +1222,7 @@ void FixConpGA::post_run()
           double U_std = sqrt(Ele_qsq[i] * inv_Ele_iter - U_ave * U_ave) * double_qe2f;
           double Q     = GA_Vext_var[iType];
           U_ave *= double_qe2f;
-          utils::logmesg(lmp, "[Ele{:2d}] <U> = {:.12f} V; std{U} = {:.12f} V @ Charge {:.6f} e\n", i + 1, U_ave, U_std, Q);
+          utils::logmesg(lmp, "[Ele{:2d}] <U> = {:.12f} V; std{{U}} = {:.12f} V @ Charge {:.6f} e\n", i + 1, U_ave, U_std, Q);
         }
         utils::logmesg(lmp, "-------------End [Conp] Electrode Potential fluctuation -------------\n\n");
         break;
@@ -1387,7 +1394,7 @@ void FixConpGA::force_analysis(int eflag, int vflag)
   tol_style = TOL::MAX_Q;
   switch (minimizer) {
     case MIN::CG:
-      update_charge_cg();
+      update_charge_cg(false);
       break;
     case MIN::PCG:
       update_charge_pcg();
@@ -1891,10 +1898,11 @@ void FixConpGA::localGA_build()
   std::copy(localGA_seq_list.begin(), localGA_seq_list.end(),
   localGA_seq.begin());
   */
-  if (me == 0) printf("all_ghostGA_num = %d, used_ghostGA_num = %d\n", all_ghostGA_num, used_ghostGA_num);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] all_ghostGA_num = {}, used_ghostGA_num = {}\n", all_ghostGA_num, used_ghostGA_num);
 }
 
 /* ---------------------------------------------------------------------- */
+//
 void FixConpGA::setup(int vflag)
 {
   FUNC_MACRO(0);
@@ -2030,7 +2038,6 @@ void FixConpGA::setup(int vflag)
   // totalGA_tag_arr.reserve(totalGA_num);
   // totalGA_tag_arr[totalGA_num-1] = 0;
   // printf("%d, totalGA_tag_arr %lu\n", totalGA_num, totalGA_tag_arr.size());
-
   buf = &localGA_EachProc.front();
   MPI_Allgather(&localGA_num, 1, MPI_INT, buf, 1, MPI_INT, world);
   // printf("localGA_EachProc size %d, %d\n", localGA_EachProc.capacity(),
@@ -2093,7 +2100,6 @@ void FixConpGA::setup(int vflag)
     std::copy(q_store_arr, q_store_arr + nlocal, q);
     // force->kspace->qsum_qsq();
   }
-
   // std::sort(int_ptr, int_ptr + totalGA_num);
 
   /* // A test of comm->forward_comm_fix to exchange ghost charge value
@@ -2118,6 +2124,8 @@ void FixConpGA::setup(int vflag)
   electro->setup();
   if (firstgroup_flag && comm_recv_arr == nullptr) {
     comm_recv_arr = electro->setup_comm(all_ghostGA_ind);
+    // comm_recv_arr == nullptr for procs without GA atoms and neighbors
+    if (comm_recv_arr == nullptr) comm_recv_arr = reinterpret_cast<int*>(this);
   }
   group_check();
   setup_GG_Flag();
@@ -2259,7 +2267,7 @@ void FixConpGA::setup_once()
     memory->create(BBB, totalGA_num, "FixConpGA:BBB");
     memory->create(BBB_localGA, localGA_num, "FixConpGA:BBB");
 
-  } else if (minimizer == MIN::CG) {
+  } else if (minimizer == MIN::CG || minimizer == MIN::NEAR) {
     // gen_invAAA();
     if (me == 0) utils::logmesg(lmp, "[ConpGA] CG allocate vector\n");
 
@@ -2311,11 +2319,12 @@ void FixConpGA::setup_once()
       //_self_calc();
     }
   } else {
+    error->all(FLERR, "Unkown minimum type");
     // TODO errr
   }
 
   if (1 || neutrality_flag) {
-    if (minimizer == MIN::CG || minimizer == MIN::PCG) {
+    if (minimizer == MIN::CG || minimizer == MIN::PCG || minimizer == MIN::PCG_EX || minimizer == MIN::NEAR) {
       // Put meanSum_AAA_cg() into uself_calc();
       meanSum_AAA_cg();
     }
@@ -2557,6 +2566,7 @@ void FixConpGA::make_ELE_matrix()
       case MIN::CG:
       case MIN::PCG:
       case MIN::PCG_EX:
+      case MIN::NEAR:
         make_ELE_matrix_iterative();
         break;
       default:
@@ -4978,9 +4988,9 @@ void FixConpGA::classic_compute_AAA()
   double* AAA_sum;
   test_charge += qsum;
   if (me == 0) {
-    utils::logmesg(lmp, "[ConpGA] \\frac{\\pi}{\\eta^2 V} = {:f} [energy unit]\n", self_g_ewald_CONST);
-    utils::logmesg(lmp, "[ConpGA] \\tidle{Q}    Mat: q_ii = {:f} = {:f} + {:f}, q_ij = {:f}\n", test_charge, qsum, (double)(totalGA_num - 1), -1.0);
-    utils::logmesg(lmp, "[ConpGA] \\tidle{Q}^-1 Mat: q_ii^-1 = {:.16f}, q_ij^-1 = {:.16f}\n", CCC_a + CCC_b, CCC_b);
+    utils::logmesg(lmp, "[ConpGA] \\frac{{\\pi}}{{\\eta^2 V}} = {:f} [energy unit]\n", self_g_ewald_CONST);
+    utils::logmesg(lmp, "[ConpGA] \\tidle{{Q}}    Mat: q_ii = {:f} = {:f} + {:f}, q_ij = {:f}\n", test_charge, qsum, (double)(totalGA_num - 1), -1.0);
+    utils::logmesg(lmp, "[ConpGA] \\tidle{{Q}}^-1 Mat: q_ii^-1 = {:.16f}, q_ij^-1 = {:.16f}\n", CCC_a + CCC_b, CCC_b);
   }
 
   istart_ptr = &localGA_seq.front();
@@ -5163,7 +5173,7 @@ void FixConpGA::classic_compute_AAA()
 
       for (ii = 0; ii < localGA_num; ++ii) {
         ilocalseq         = istart_ptr[ii];
-        AAA[ii][itotalGA] = ek_atom[ilocalseq] + cl_atom[ilocalseq]; // + pe_RML[ilocalseq];
+        AAA[ii][itotalGA] = ek_atom[ilocalseq] + cl_atom[ilocalseq]; // +  +   // + pe_RML[ilocalseq];
 #ifndef CONP_NO_DEBUG
         if (iproc == work_me && DEBUG_LOG_LEVEL > 0) {
           printf("Iter%d CPU:%d ilocalseq: %d[tag:%d] Q: %f,%f,%f eatom: %f, "
@@ -5376,7 +5386,7 @@ void FixConpGA::setup_AAA()
                           "times Ewald summation.\n");
     classic_compute_AAA();
   }
-  if (me == 0) utils::logmesg(lmp, "[ConpGA] Compute Ewald matrix for {:8.6f}[s]!\n", double(clock() - t_begin_AAA) / CLOCKS_PER_SEC);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] Compute Ewald matrix for {:8.6f}!\n", double(clock() - t_begin_AAA) / CLOCKS_PER_SEC);
 
   double *q = atom->q, **AAA_Global;
   MPI_Datatype MPI_totalGA;
@@ -5397,7 +5407,7 @@ void FixConpGA::setup_AAA()
   inverse(AAA_Global, totalGA_num, AAA, localGA_num);
 
   t_end = clock();
-  if (me == 0) utils::logmesg(lmp, "[ConpGA] Matrix Inversion for elapsed: %8.6f[s]\n", double(t_end - t_begin_AAA) / CLOCKS_PER_SEC);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] Matrix Inversion for elapsed: {:8.6f}[s]\n", double(t_end - t_begin_AAA) / CLOCKS_PER_SEC);
 
   if (me == 0) make_symmetric_matrix(symmetry_flag, totalGA_num, AAA_Global);
   MPI_Barrier(world);
@@ -5427,11 +5437,12 @@ void FixConpGA::group_check()
   int nlocal = atom->nlocal, icount = 0;
   int *type = atom->type, *tag = atom->tag, *mask = atom->mask;
   for (int iseq = 0; iseq < nlocal; ++iseq) {
-    if ((mask[iseq] & groupbit) && GA_Flags[type[iseq]] != 0) {
+    if (mask[iseq] & groupbit) {
       icount++;
+      if (GA_Flags[type[iseq]] == 0) {
+        error->one(FLERR, "Fix::Conp inconsistent fix group and electrodes setup!");
+      }
     } else {
-      // error->one(FLERR, "Fix::Conp inconsistent fix group and electrodes
-      // setup!");
     }
   }
   if (icount != localGA_num) {
@@ -5547,7 +5558,8 @@ void FixConpGA::update_charge_ppcg()
   }
   if (!GA2GA_flag) {
     for (i = 0; i < localGA_num; i++) {
-      iseq              = GA_seq_arr[i];
+      iseq = GA_seq_arr[i];
+      qlocalGA_incr_sum -= q_store_arr[iseq];
       q_store_arr[iseq] = 0;
       B0_prev[i]        = 0;
     }
@@ -5888,7 +5900,7 @@ void FixConpGA::update_charge_ppcg()
     } else {
       Ele_qsum_ptr = nullptr;
     }
-    POST2ND_charge(qGA_incr_sum + qsum_store, Ele_qsum, q_store_arr);
+    POST2ND_charge(qGA_incr_sum + qsum_store, Ele_qsum_ptr, q_store_arr);
     // localGA_charge_neutrality(qGA_incr_sum + qsum_store, q_store_arr);
   }
   // double *B_tmp; B_tmp = B0_next; B0_next = B0_prev; B0_prev = B_tmp;
@@ -6000,7 +6012,8 @@ void FixConpGA::update_charge_pcg()
   }
   if (!GA2GA_flag) {
     for (i = 0; i < localGA_num; i++) {
-      iseq              = GA_seq_arr[i];
+      iseq = GA_seq_arr[i];
+      qlocalGA_incr_sum -= q_store_arr[iseq];
       q_store_arr[iseq] = 0;
       B0_prev[i]        = 0;
     }
@@ -6460,7 +6473,7 @@ void FixConpGA::update_charge_pcg()
     } else {
       Ele_qsum_ptr = nullptr;
     }
-    POST2ND_charge(qGA_incr_sum + qsum_store, Ele_qsum, q_store_arr);
+    POST2ND_charge(qGA_incr_sum + qsum_store, Ele_qsum_ptr, q_store_arr);
     /*
     if (tol_style == TOL::REL_B) {
       for (i = 0; i < localGA_num; i++) {
@@ -6615,16 +6628,24 @@ void FixConpGA::pcg_Matrix_Residual(double z_shift, double* const z, const doubl
     printf("\n\n");
   }
 }
+/* ----------------------------------------------------------------------------------------
+Update the charge on each eletrode atom only accouting the near field
+---------------------------------------------------------------------------------------- */
+void FixConpGA::update_charge_near()
+{
+  FUNC_MACRO(0);
+  update_charge_cg(false);
+}
 
 /* ----------------------------------------------------------------------------------------
   Update the atomic charge on each eletrode atom based on the conjugate gradient
 method (CG)
 ----------------------------------------------------------------------------------------
 */
-void FixConpGA::update_charge_cg()
+void FixConpGA::update_charge_cg(bool far_flag)
 {
   // work_me = 0;
-  FUNC_MACRO(0)
+  FUNC_MACRO(0);
   int i, j, ii, iter;
   int nlocal = atom->nlocal, *type = atom->type, *tag = atom->tag;
   int* GA_seq_arr = &localGA_seq.front();
@@ -6678,7 +6699,8 @@ void FixConpGA::update_charge_cg()
   // No GA2GA interaction starts from zero;
   if (!GA2GA_flag) {
     for (i = 0; i < localGA_num; i++) {
-      iseq              = GA_seq_arr[i];
+      iseq = GA_seq_arr[i];
+      qlocalGA_incr_sum -= q_store_arr[iseq];
       q_store_arr[iseq] = 0;
       B0_prev[i]        = 0;
     }
@@ -6765,11 +6787,18 @@ void FixConpGA::update_charge_cg()
     electro->pair_GAtoGA();
     update_P_time += double(clock() - t_begin) / CLOCKS_PER_SEC;
 
-    t_begin = clock();
-    electro->compute_GAtoGA();
-    // calculation in kspace;
-    electro->calc_GA_potential(STAT::E, STAT::E, SUM_OP::BOTH);
-    update_K_time += double(clock() - t_begin) / CLOCKS_PER_SEC;
+    if (1 || !far_flag) {
+      t_begin = clock();
+      // calculation in kspace;
+      electro->compute_GAtoGA();
+      // set_zeros(&ek_atom[0], 0, localGA_num);
+      electro->calc_GA_potential(STAT::E, STAT::E, SUM_OP::BOTH);
+      update_K_time += double(clock() - t_begin) / CLOCKS_PER_SEC;
+    } else {
+      set_zeros(&ek_atom[0], 0, localGA_num);
+      electro->calc_GA_potential(STAT::E, STAT::E, SUM_OP::BOTH);
+      update_K_time += double(clock() - t_begin) / CLOCKS_PER_SEC;
+    }
 
     ptap_local = 0;
     for (i = 0; i < localGA_num; i++) {
@@ -6945,6 +6974,7 @@ void FixConpGA::update_charge_cg()
       Ele_qsum_ptr = nullptr;
     }
     // localGA_charge_neutrality(qGA_incr_sum + qsum_store, q_store_arr);
+    // printf("qGA_incr_sum = %.10g; qsum_store = %.10g\n", qGA_incr_sum, qsum_store);
     POST2ND_charge(qGA_incr_sum + qsum_store, Ele_qsum_ptr, q_store_arr);
   }
   std::copy(q_store_arr, q_store_arr + nlocal, q);
@@ -6995,11 +7025,17 @@ double FixConpGA::POST2ND_charge(double value, double* Ele_qsum0, double* q)
       if (Ele_qsum0 != nullptr) {
         double qlocal_charge = 0;
         for (int i = 0; i < Ele_num; i++) {
-          qlocal_charge += Ele_qsum[i];
+          qlocal_charge += Ele_qsum0[i];
         }
         MPI_Allreduce(MPI_IN_PLACE, &qlocal_charge, 1, MPI_DOUBLE, MPI_SUM, world);
+#ifndef CONP_NO_DEBUG
+        if (DEBUG_LOG_LEVEL > 0) printf("me = %d; value = %.10g, qlocal = %.10g\n", me, value, qlocal_charge);
+#endif
         return POST2ND_localGA_neutrality(value + qlocal_charge, q);
       } else {
+#ifndef CONP_NO_DEBUG
+        if (DEBUG_LOG_LEVEL > 0) printf("me = %d; value = %.10g\n", me, value);
+#endif
         return POST2ND_localGA_neutrality(value, q);
       }
       break;
@@ -7040,25 +7076,64 @@ double FixConpGA::POST2ND_solve_ele_matrix(double* Ele_qtotal, double* q)
   print_vec(dU, Ele_num, "dU ");
   print_vec(Ele_qtotal, Ele_num, "Ele_qtotal ");
   */
-
+  double dU0, dU1, dU2, dU3, dU4;
+  double* ptr = &Ele_D_matrix[0][0];
   for (int i = 0; i < Ele_num; i++) {
     Ele_Uchem[i] += dU[i];
   }
   switch (Ele_num) {
     case 0:
-    case 2:
-    default:
-      double dU0 = dU[0], dU1 = dU[1];
-      double* ptr = &Ele_D_matrix[0][0];
-      for (int i = 0; i < localGA_num; i++) {
-        double delta_q;
-        delta_q = *(ptr++) * dU0;
-        delta_q += *(ptr++) * dU1;
-        int iseq = GA_seq_arr[i];
-        q[iseq] += delta_q;
-        localGA_Vext[i] += dU[localGA_eleIndex[i]];
+      error->all(FLERR, "Cannot implement charge conservation calculation with zero electrode");
+      break;
+    case 1:
+      dU0 = dU[0];
+      if (B0_prev) {
+        for (int i = 0; i < localGA_num; i++) {
+          double delta_q;
+          delta_q  = *(ptr++) * dU0;
+          int iseq = GA_seq_arr[i];
+          q[iseq] += delta_q;
+          double delta_U = dU[localGA_eleIndex[i]];
+          localGA_Vext[i] += delta_U;
+          B0_prev[i] += delta_U;
+        }
+      } else {
+        for (int i = 0; i < localGA_num; i++) {
+          double delta_q;
+          delta_q  = *(ptr++) * dU0;
+          int iseq = GA_seq_arr[i];
+          q[iseq] += delta_q;
+          localGA_Vext[i] += dU[localGA_eleIndex[i]];
+        }
       }
       break;
+    case 2:
+      dU0 = dU[0];
+      dU1 = dU[1];
+      if (B0_prev) {
+        for (int i = 0; i < localGA_num; i++) {
+          double delta_q;
+          delta_q = *(ptr++) * dU0;
+          delta_q += *(ptr++) * dU1;
+          int iseq = GA_seq_arr[i];
+          q[iseq] += delta_q;
+          double delta_U = dU[localGA_eleIndex[i]];
+          localGA_Vext[i] += delta_U;
+          B0_prev[i] += delta_U;
+        }
+      } else {
+        for (int i = 0; i < localGA_num; i++) {
+          double delta_q;
+          delta_q = *(ptr++) * dU0;
+          delta_q += *(ptr++) * dU1;
+          int iseq = GA_seq_arr[i];
+          q[iseq] += delta_q;
+          localGA_Vext[i] += dU[localGA_eleIndex[i]];
+        }
+      }
+      break;
+    default:
+      error->all(FLERR, "charge conservation calculation more than two electrode is not implemented yet");
   }
   // printf("POST2ND_solve_ele_matrix end\n");
   return 0;
@@ -7381,8 +7456,9 @@ void FixConpGA::meanSum_AAA_cg()
 
   neutrality_flag = postreat_flag = false;
   switch (minimizer) {
+    case MIN::NEAR:
     case MIN::CG:
-      update_charge_cg();
+      update_charge_cg(false);
       break;
     case MIN::PCG:
       update_charge_pcg();
@@ -7905,6 +7981,7 @@ void FixConpGA::fix_pair_compute(bool POT_Flag, bool COMM_Flag)
 void FixConpGA::zero_solution_check()
 {
   FUNC_MACRO(0);
+  printf("start of zero () from %d\n", me);
   int nlocal = atom->nlocal;
   int* mask  = atom->mask;
   double *q = atom->q, qFabs_local = 0.0, qFabs_sum;
@@ -7922,6 +7999,7 @@ void FixConpGA::zero_solution_check()
     error->all(FLERR, "There is not charge on the solution atoms, so the "
                       "selfGG cannot be turned on!");
   }
+  printf("end of zero () from %d\n", me);
 }
 
 /* --------------------------------------------------------------------------------------
@@ -8016,9 +8094,9 @@ void FixConpGA::localGA_atomsort()
       }
       if (newseq != GA_seq[i]) {
         snprintf(info, FIX_CONP_GA_WIDTH,
-                 "Invalid atom sequence from first on atom tag: %d with old sequence %d missing "
-                 "with newseq: %d",
-                 localGA_tag_arr[i], localGA_seq[i], newseq);
+                 "Invalid [%d] atom sequence from first on atom tag: %d with old sequence %d, now with tag %d missing "
+                 "with newseq: %d with tag: %d\n",
+                 i, localGA_tag_arr[i], localGA_seq[i], tag[localGA_seq[i]], newseq, tag[newseq]);
         error->one(FLERR, info);
       }
     }
@@ -8234,7 +8312,7 @@ void FixConpGA::setup_GG_Flag()
   }
   if (me == 0)
     utils::logmesg(lmp,
-                   "[ConpGA] Solving Eq=b with    GA<->GA interaction, "
+                   "[ConpGA] Solving Eq=b with  GA<->GA interaction, "
                    "selfGG_Flag = {}.\n",
                    GA2GA_flag);
 }
@@ -8711,9 +8789,17 @@ void FixConpGA::calc_env_alpha()
   Umat             = nullptr;
   __env_alpha_flag = false;
 }
+
+/* ---------------------------------------------------------------- */
+// Function to obtain the extermum value
+// two functions invoke it
+//   from setup()
+//   from pre_forece()
 void FixConpGA::equalize_Q()
 {
   double* cl_atom = electro->cl_atom();
+  double* ek_atom = electro->ek_atom();
+
   // fix_localGA_pairenergy(GA2GA_flag);
   // norm_mat_p(cl_atom, localGA_num, "Classic");
 
@@ -8724,18 +8810,40 @@ void FixConpGA::equalize_Q()
 #endif
 
   time_t t_begin0 = clock();
-  // electro->compute(3, 0);
-  electro->compute_SOLtoGA(GA2GA_flag);
-  // electro->compute_GAtoGA();
-  update_K_time += double(clock() - t_begin0) / CLOCKS_PER_SEC;
+  switch (minimizer) {
+    // MIN::NEAR
+    case MIN::NEAR:
+      electro->pair_SOLtoGA(GA2GA_flag);
+      electro->calc_GA_potential(STAT::POT, electro->get_ek_stat(), SUM_OP::OFF);
+      update_P_time += double(clock() - t_begin0) / CLOCKS_PER_SEC;
+      break;
 
-  // for
-  // norm_mat_p(cl_atom, localGA_num, "Before");
-  // norm_mat_p(cl_atom, localGA_num, "Comm..");
-  t_begin0 = clock();
-  electro->pair_SOLtoGA(GA2GA_flag);
-  electro->calc_GA_potential(STAT::POT, STAT::POT, SUM_OP::ON);
-  update_P_time += double(clock() - t_begin0) / CLOCKS_PER_SEC;
+    // MIN::FAR
+    case MIN::FAR:
+      electro->compute_SOLtoGA(GA2GA_flag);
+      update_K_time += double(clock() - t_begin0) / CLOCKS_PER_SEC;
+
+      t_begin0 = clock();
+      electro->calc_GA_potential(electro->get_cl_stat(), STAT::POT, SUM_OP::OFF);
+      update_P_time += double(clock() - t_begin0) / CLOCKS_PER_SEC;
+      break;
+
+    // OTHER
+    default:
+      // electro->compute(3, 0);
+      electro->compute_SOLtoGA(GA2GA_flag);
+      // electro->compute_GAtoGA();
+      // set_zeros(&ek_atom[0], 0, localGA_num);
+      update_K_time += double(clock() - t_begin0) / CLOCKS_PER_SEC;
+      // for
+      // norm_mat_p(cl_atom, localGA_num, "Before");
+      // norm_mat_p(cl_atom, localGA_num, "Comm..");
+      t_begin0 = clock();
+      electro->pair_SOLtoGA(GA2GA_flag);
+      electro->calc_GA_potential(STAT::POT, STAT::POT, SUM_OP::ON);
+      update_P_time += double(clock() - t_begin0) / CLOCKS_PER_SEC;
+      break;
+  }
 
   // Extra force calculation in real and kspace are necessary//
   // Because the position of
@@ -8760,6 +8868,9 @@ void FixConpGA::equalize_Q()
     case MIN::PCG_EX:
       update_charge_ppcg();
       break;
+    case MIN::NEAR:
+      update_charge_near();
+      break;
     case MIN::NONE:;
       break;
     default:
@@ -8778,8 +8889,7 @@ void FixConpGA::pre_force(int vflag)
     return;
   };
 
-  FUNC_MACRO(0)
-  double **f = atom->f, force_store[3] = {0, 0, 0};
+  FUNC_MACRO(0) double **f = atom->f, force_store[3] = {0, 0, 0};
   // bool clear_force = true;
   update_K_time = update_P_time = 0.0;
   /*
@@ -8807,7 +8917,7 @@ void FixConpGA::pre_force(int vflag)
                 "Error: Inconsistent B0 by the electrode alone from the equilibrium charge in the "
                 "last step for [%i] %.16f vs %.16f error: %g\n",
                 i, B0_prev[i], B0_next[i], B0_error);
-        error->one(FLERR, info);
+        error->warning(FLERR, info);
       }
     }
 // double * B_tmp; B_tmp = B0_next; B0_next = B0_prev; B0_prev = B_tmp;

@@ -42,7 +42,8 @@ Note tat a NIL `compute pe/atom_GA` with the compute name of `__Electro_Control_
 
 **Otherwise**, copy all files in the `src_mod` folder to `src` and edit the`src\MAKE\OPTION\Makefile.XXX `. Then, type `make XXX` in the `src` folder. Here, **Makefile.intel_cpu_intelmpi** is also provided in `misc` folder as an example for installation configuration.
 
-Note that the default **single** precision of the FFTW setup is not higher enough for constant potential simulation that results in the order of error of 1e-6. To improve the accuracy, we suggests to switch to  **double** precision using the macro of `-DFFT_DOUBLE`. Thus, if the error of `undefined reference to 'LAMMPS_NS::FFT3d::compute(double*, double*, int)'` is encountered, type `make clean-XXX` to remove the existing **single** precision FFTW library and recompile it.
+Note that the default **single** precision of the FFTW setup is not higher enough for constant potential simulation that results in the order of error of 1e-6. To improve the accuracy, we suggests to switch to  **double** precision using the macro of `-DFFT_DOUBLE`. Thus, if the error of `undefined reference to 'LAMMPS_NS::FFT3d::compute(double*, double*, int)'` is encountered, type `make no-KSPACE;
+make yes-KSPACE` to recompile the existing *kspace* code compiled with **single** precision FFTW library.
 
 ## Syntax: pair_style lj/cut/point/long
 

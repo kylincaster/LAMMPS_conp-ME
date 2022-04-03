@@ -58,7 +58,7 @@ pair_modify       mix geometric tail yes
 #air_modify 	  table 0
 pair_coeff		  * * 0.0 0.0
 mass			  *   12
-
+atom_modify	      sort 10 0.0
 
 #roup			  GA_lo region box0
 #roup			  GA_hi region box1

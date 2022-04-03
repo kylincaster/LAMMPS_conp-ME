@@ -79,6 +79,8 @@ enum class MIN : int {
   CG,
   PCG,
   PCG_EX,
+  NEAR,
+  FAR,
 };
 } // namespace LAMMPS_NS
 #endif

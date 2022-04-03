@@ -1405,7 +1405,6 @@ void PairLJCutPointLong::allocate()
   memory->create(lj4, n + 1, n + 1, "pair:lj4");
   memory->create(offset, n + 1, n + 1, "pair:offset");
   memory->create(cl_atom, maxeatom, "pair:cl_atom");
-  printf("end of function()\n");
 }
 
 /* ----------------------------------------------------------------------

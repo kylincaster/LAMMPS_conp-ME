@@ -42,7 +42,7 @@ region			  box0 block 0 ${NX} 0 ${NY}  0  1
 region			  box1 block 0 ${NX} 0 ${NY} $(v_SLG_int) $(v_SLG_int+1)
 create_atoms	  1 region box0
 create_atoms	  2 region box1
-
+atom_modify	      sort 10 0.0
 
 variable		  lz equal lz
 variable		  lz equal ${lz}
@@ -116,7 +116,7 @@ group             ME    type 3
 group             CLA   type 4
 group             ions  type 3 4
 set 			  group ME charge  +1
-set 			  group CLA charge -1
+set 			  group CLA charge +1
 # variable 		  prun equal ramp(${multi_run},0)%${runs}==0*ramp(${multi_run},0)%${}
 variable 		  prun equal abs(-ceil(ramp(0,-${multi_run})/${runs}))%${multiRun_times}
 

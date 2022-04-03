@@ -43,7 +43,7 @@ variable		  lz equal lz
 variable		  lz equal ${lz}
 variable		  lz_half equal ${lz}/2
 change_box		  all z delta -${lz_half} -${lz_half} remap units box
-
+atom_modify	      sort 10 0.0
 
 variable		  eta_GA equal 2.93295072600296 # for GA with r_1nn = 1.42
 pair_style		  lj/cut/point/long 10.0 10.0 point 1 ${eta_GA}  point 2 ${eta_GA}

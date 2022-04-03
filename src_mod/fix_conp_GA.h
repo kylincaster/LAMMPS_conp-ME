@@ -82,9 +82,10 @@ public:
   void setup_once();
   void setup_AAA_Direct();
   void update_charge_AAA();
-  void update_charge_cg();
+  void update_charge_cg(bool far_flag = true);
   void update_charge_pcg();
   void update_charge_ppcg();
+  void update_charge_near();
   void pcg_Matrix_Residual(double, double* const, const double* const, const double* const, const int* const, const double* const);
   double compute_scalar();
   double compute_vector(int);
