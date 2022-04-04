@@ -1840,7 +1840,7 @@ void FixConpGA::localGA_build()
 
   memory->create(Ele_GAnum, Ele_num, "fix_Conp/GA::setup_CELL()::Ele_qsum");
   set_zeros(Ele_GAnum, 0, Ele_num);
-  memory->create(localGA_eleIndex, localGA_num, "fix_Conp/GA::setup_CELL()::localGA_types");
+  memory->create(localGA_eleIndex, localGA_num + 1, "fix_Conp/GA::setup_CELL()::localGA_types");
   for (i = 0; i < nlocal; ++i) {
     int iEle = GA_Flags[type[i]];
     if (iEle != 0) {
@@ -2329,6 +2329,7 @@ void FixConpGA::setup_once()
       meanSum_AAA_cg();
     }
   }
+
   if (Ele_Cell_Model == CELL::Q) {
     make_ELE_matrix();
   }
@@ -2557,7 +2558,11 @@ CLOCKS_PER_SEC;
 void FixConpGA::make_ELE_matrix()
 {
   memory->create(Ele_matrix, Ele_num, Ele_num, "fix_Conp/GA::make_ELE_matrix()::Ele_matrix");
-  memory->create(Ele_D_matrix, localGA_num, Ele_num, "fix_Conp/GA::make_ELE_matrix()::Ele_D_matrix");
+  if (localGA_num != 0) {
+    memory->create(Ele_D_matrix, localGA_num, Ele_num, "fix_Conp/GA::make_ELE_matrix()::Ele_D_matrix");
+  } else {
+    memory->create(Ele_D_matrix, 1, 1, "fix_Conp/GA::make_ELE_matrix()::Ele_D_matrix");
+  }
 
   if (AAA != nullptr) {
     return make_ELE_matrix_direct();
@@ -2570,7 +2575,7 @@ void FixConpGA::make_ELE_matrix()
         make_ELE_matrix_iterative();
         break;
       default:
-        error->all(FLERR, "meanSum_AAA_cg() only valid for MIN::CG, MIN::PCG or "
+        error->all(FLERR, "make_ELE_matrix() only valid for MIN::CG, MIN::PCG or "
                           "MIN::PPCG methods");
     }
   }
@@ -2587,10 +2592,12 @@ void FixConpGA::make_ELE_matrix_direct()
   memory->create(totalGA_eleIndex, totalGA_num, "fix_Conp/GA::make_ELE_matrix_direct()::totalGA_types");
   // memory->create(matrix, Ele_num+1, Ele_num+1,
   // "fix_Conp/GA::make_ELE_matrix_direct()::matrix");
+  // localGA_EachProc.reserve(1);
+  // localGA_EachProc_Dipl.reserve(1);
   MPI_Allgatherv(localGA_eleIndex, localGA_num, MPI_INT, totalGA_eleIndex, &localGA_EachProc.front(), &localGA_EachProc_Dipl.front(), MPI_INT, world);
-
   set_zeros(&Ele_matrix[0][0], 0, Ele_num_sqr);
   set_zeros(&Ele_D_matrix[0][0], 0, localGA_num * Ele_num);
+
   for (int i = 0; i < localGA_num; i++) {
     int iEle = localGA_eleIndex[i];
     for (int j = 0; j < totalGA_num; j++) {
@@ -7561,8 +7568,11 @@ void FixConpGA::loadtxt_AAA()
   int nn_pppm[3] = {0, 0, 0};
 
   // FILE* outa = fopen(AAA_save,"r");
-
-  memory->create(AAA, localGA_num, totalGA_num, "FixConp/GA: AAA_tmp");
+  if (localGA_num != 0) {
+    memory->create(AAA, localGA_num, totalGA_num, "FixConp/GA: AAA_tmp");
+  } else {
+    memory->create(AAA, 1, 1, "FixConp/GA: AAA_tmp");
+  }
   if (me == 0) {
     memory->create(AAA_Global, totalGA_num, totalGA_num, "FixConp/GA: AAA_tmp");
 
@@ -7678,7 +7688,11 @@ void FixConpGA::load_AAA()
   double *AAA_tmp1D, **AAA_Global = nullptr;
   bool reshuffle_flag = false;
 
-  memory->create(AAA, localGA_num, totalGA_num, "FixConp/GA: AAA");
+  if (localGA_num != 0) {
+    memory->create(AAA, localGA_num, totalGA_num, "FixConp/GA: AAA_tmp");
+  } else {
+    memory->create(AAA, 1, 1, "FixConp/GA: AAA_tmp");
+  }
   if (me == 0) {
     memory->create(AAA_Global, totalGA_num, totalGA_num, "FixConp/GA: AAA_Global");
     size_t result;
@@ -7985,7 +7999,6 @@ void FixConpGA::fix_pair_compute(bool POT_Flag, bool COMM_Flag)
 void FixConpGA::zero_solution_check()
 {
   FUNC_MACRO(0);
-  printf("start of zero () from %d\n", me);
   int nlocal = atom->nlocal;
   int* mask  = atom->mask;
   double *q = atom->q, qFabs_local = 0.0, qFabs_sum;
@@ -8003,7 +8016,6 @@ void FixConpGA::zero_solution_check()
     error->all(FLERR, "There is not charge on the solution atoms, so the "
                       "selfGG cannot be turned on!");
   }
-  printf("end of zero () from %d\n", me);
 }
 
 /* --------------------------------------------------------------------------------------
