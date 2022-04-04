@@ -2,8 +2,8 @@
 # mpiexec -np 12 -localonly ./lmp_mpi.exe -in cont.acc -log log.txt 
 shell shutdown -a
 # System and potential definition
-units           metal
-timestep		1.0e-3 # 1fs = 10^-15s
+units           real
+timestep		1 # 1.0e-3 # 1fs = 10^-15s
 boundary        p p p
 atom_style      full
 bond_style      harmonic
@@ -12,14 +12,15 @@ angle_style     harmonic
 #rocessors	   2 2 1
 
 # +++++++++ Variable to control the output ++++++++++
-variable thermoSkip equal 1 # 200
+variable thermoSkip equal 100 # 200
 variable dumpSkip   equal 10000
 variable saveSkip   equal 20000
 variable Thigh      equal 1000 # 1000
 
-read_data		./data.lammpsdata
+read_data		./data_min.lammpsdata
+#isplace_atoms  all move 5 0 0 units box
 variable		cQ equal 1e-3
-variable		U equal 2.4 # V
+variable		U equal 1 # V
 
 variable		time_scale equal 10 # 00
 variable		time_scale_ions equal 5 # 00
@@ -51,7 +52,7 @@ pair_coeff    1  2     0.000000000000e+000 0.000000000000
 pair_coeff    1  3     0.114310385 3.275140000000
 pair_coeff    1  4     0.000000000000e+000 0.000000000000
 pair_coeff    1  5     0.227584676  3.706153914
-pair_coeff    1  6    0.114011346  3.231304897
+pair_coeff    1  6     0.114011346  3.231304897
 
 #CA ID:1 Aromatic Carbon from charmm27(fixed)
 pair_coeff    2  2     0.000000000000e+000 0.000000000000
@@ -61,10 +62,10 @@ pair_coeff    2  5     0.227584676  3.706153914
 pair_coeff    2  6     0.114011346  3.231304897
 
 #O_TIP3P ID:2 Oxygent in TIP3P water model
-pair_coeff    3  3     0.152108308          3.150580
+pair_coeff    3  3     0.152108308  3.150580
 pair_coeff    3  4     0.000000000000e+000 0.000000000000
 pair_coeff    3  5     0.302837926  3.581593914
-pair_coeff    3  6     0.151710388   3.106744897
+pair_coeff    3  6     0.151710388  3.106744897
 
 #H_TIP3P ID:3 Hydrogen in TIP3P water model
 pair_coeff    4  4     0.000000000000e+000 0.000000000000
@@ -72,7 +73,7 @@ pair_coeff    4  5     0.000000000000e+000 0.000000000000
 pair_coeff    4  6     0.000000000000e+000 0.000000000000
 
 
-pair_coeff    5  5    0.60293097           4.012607827
+pair_coeff    5  5    0.60293097          4.012607827
 pair_coeff    5  6    0.302045694         3.53775881
 
 pair_coeff    6  6    0.15131351          3.062909793
@@ -139,6 +140,9 @@ compute 	Q all property/atom q
 compute		Q1 GA1 reduce ave c_Q
 compute		Q2 GA2 reduce ave c_Q
 compute		Qsum all reduce sum c_Q
+
+compute		coul ele pe/atom_GA coul kspace
+variable	epot atom c_coul/q
 fix			conp all null_print
 
 thermo_style	custom step cpu c_flow_comtemp evdwl ecoul elong pe ke etotal press pxx pyy pzz v_pflow v_pflow_xy v_pflow_z c_Q1 c_Q2 c_Qsum f_conp
@@ -147,25 +151,31 @@ thermo          ${thermoSkip}
 thermo_modify   flush yes
 restart         ${saveSkip} restart	
 
-reset_timestep	995
+reset_timestep	0
 write_dump 		all atom init.lammpstrj
-fix             9 flow temp/berendsen 298.0 298.0 0.1
-fix_modify      9 temp flow_comtemp
-unfix			conp
-fix				conp ele conp/GA 1 inv charged 1 ${GA_Q} charged 2 -${GA_Q} pair on tol_style rel_B check_first 10000 0.01 selfGG off first on neutrality on matrix ./a.binmat none debug 0
-run				$(500*v_time_scale)
-unfix 		  	9
 
-write_restart 	restart.equil
+#ump			1 ele custom 50 ele.dump id type c_coul q v_epot
+fix				1 flow nve
+fix             shakeFix water shake 0.0001 20 0 b 1 a 1
+fix             9 flow temp/berendsen 298.0 298.0 100
+fix_modify      9 temp flow_comtemp
+run				$(50*v_time_scale)
+unfix			conp
+fix                           conp ele conp/GA 1 inv charged 1 ${GA_Q} charged 2 -${GA_Q} pair on tol_style rel_B check_first 10000 0.01 selfGG off first on neutrality on matrix ./a.binmat none debug 0
+run				$(50*v_time_scale)
+unfix 		  	9
+#ndump			1
+
+
 unfix			1
-fix             9 flow nvt temp 298.0 298.0 0.1
+fix             9 flow nvt temp 298.0 298.0 100
 fix_modify      9 temp flow_comtemp
 run				$(500*v_time_scale)
 unfix 		  	9
 
 dump 		 	1 all atom $(20*v_time_scale) atom.lammpstrj
 dump 		 	2 ions atom $(v_time_scale_ions) ions.lammpstrj
-fix             9 flow nvt temp 298.0 298.0 0.1
+fix             9 flow nvt temp 298.0 298.0 100
 fix_modify      9 temp flow_comtemp
 run				$(5000*v_time_scale) # 00
 unfix 		  	9

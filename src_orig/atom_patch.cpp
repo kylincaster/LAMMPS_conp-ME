@@ -91,6 +91,7 @@ Atom::Atom(LAMMPS *lmp) : Pointers(lmp)
   nbondtypes = nangletypes = ndihedraltypes = nimpropertypes = 0;
   nbonds = nangles = ndihedrals = nimpropers = 0;
 
+  nfirst = 0;
   firstgroupname = nullptr;
   sortfreq = 1000;
   nextsort = 0;

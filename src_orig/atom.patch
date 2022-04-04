@@ -1,6 +1,14 @@
---- atom.cpp	2022-04-03 14:11:52.277128600 +0800
-+++ atom_patch.cpp	2022-04-03 14:35:05.903771100 +0800
-@@ -2095,7 +2095,7 @@
+--- atom.cpp	2022-04-04 14:47:27.193765800 +0800
++++ atom_patch.cpp	2022-04-04 14:47:42.792517400 +0800
+@@ -91,6 +91,7 @@
+   nbondtypes = nangletypes = ndihedraltypes = nimpropertypes = 0;
+   nbonds = nangles = ndihedrals = nimpropers = 0;
+ 
++  nfirst = 0;
+   firstgroupname = nullptr;
+   sortfreq = 1000;
+   nextsort = 0;
+@@ -2095,7 +2096,7 @@
  
    for (i = 0; i < nbins; i++) binhead[i] = -1;
  
@@ -9,7 +17,7 @@
      ix = static_cast<int> ((x[i][0]-bboxlo[0])*bininvx);
      iy = static_cast<int> ((x[i][1]-bboxlo[1])*bininvy);
      iz = static_cast<int> ((x[i][2]-bboxlo[2])*bininvz);
-@@ -2113,7 +2113,7 @@
+@@ -2113,7 +2114,7 @@
    // permute = desired permutation of atoms
    // permute[I] = J means Ith new atom will be Jth old atom
  
@@ -18,7 +26,7 @@
    for (m = 0; m < nbins; m++) {
      i = binhead[m];
      while (i >= 0) {
-@@ -2126,7 +2126,7 @@
+@@ -2126,7 +2127,7 @@
    // current[I] = J means Ith current atom is Jth old atom
  
    int *current = next;
@@ -27,7 +35,7 @@
  
    // reorder local atom list, when done, current = permute
    // perform "in place" using copy() to extra atom location at end of list
-@@ -2135,7 +2135,7 @@
+@@ -2135,7 +2136,7 @@
    // copy after inner-loop moves atom at end of list back into list
    // empty = location in atom list that is currently empty
  

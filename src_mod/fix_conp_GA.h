@@ -86,6 +86,7 @@ public:
   void update_charge_pcg();
   void update_charge_ppcg();
   void update_charge_near();
+  bigint count_type(int itype);
   void pcg_Matrix_Residual(double, double* const, const double* const, const double* const, const int* const, const double* const);
   double compute_scalar();
   double compute_vector(int);

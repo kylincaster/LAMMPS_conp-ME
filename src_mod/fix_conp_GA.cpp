@@ -456,6 +456,11 @@ iseq:
                 arg[iarg + 1], arg[iarg + 2]);
         error->all(FLERR, info);
       }
+      if (count_type(i) == 0) {
+        error->warning(FLERR, "The electrode setup is skipped by no atom for type: {}", i);
+        iarg += 3;
+        continue;
+      }
       if (strstr(arg[iarg + 2], "v_")) {
         int n_str      = strlen(&arg[iarg + 2][2]) + 1;
         GA_Vext_str[i] = (char*)memory->smalloc(n_str * sizeof(char), "GA_Vext_str[i]"); // new char[n_str];
@@ -467,8 +472,8 @@ iseq:
       Ele_num++;
       GA_Flags[i]               = Ele_num;
       Ele_To_aType[Ele_num - 1] = i;
-      if (strcmp(arg[iarg], "metal") == 0) Ele_Control_Type[Ele_num] = CONTROL::METAL;
-      if (strcmp(arg[iarg], "charged") == 0) Ele_Control_Type[Ele_num] = CONTROL::CHARGED;
+      if (strcmp(arg[iarg], "metal") == 0) Ele_Control_Type[Ele_num - 1] = CONTROL::METAL;
+      if (strcmp(arg[iarg], "charged") == 0) Ele_Control_Type[Ele_num - 1] = CONTROL::CHARGED;
       iarg += 3;
     } else if (strcmp(arg[iarg], "Smat") == 0) {
       if (iarg + 2 > narg) error->all(FLERR, "Illegal fix conp/GA command for Smat option.");
@@ -973,21 +978,21 @@ void FixConpGA::setup_CELL()
   int n_plus        = n + 1;
   bool charged_flag = false;
   bool metal_flag   = false;
-  for (int iEle = 1; iEle <= Ele_num; iEle++) {
+  for (int iEle = 0; iEle < Ele_num; iEle++) {
     int iType = Ele_To_aType[iEle];
     if (Ele_Control_Type[iEle] == CONTROL::METAL) {
       if (me == 0)
         utils::logmesg(lmp,
                        "[ConpGA] Atom Type {} is set as {}th electrode with POTENTIAL "
-                       "control at {:f}\n",
-                       iType, iEle, GA_Vext_var[iType]);
+                       "control at {:.10f}\n",
+                       iType, iEle + 1, GA_Vext_var[iType]);
       metal_flag = true;
     } else if (Ele_Control_Type[iEle] == CONTROL::CHARGED) {
       if (me == 0)
         utils::logmesg(lmp,
                        "[ConpGA] Atom Type {} as {}th electrode with CHARGE control "
                        "at {:f}\n",
-                       iType, iEle, GA_Vext_var[iType]);
+                       iType, iEle + 1, GA_Vext_var[iType]);
       charged_flag = true;
       if (GA_Vext_type[iType + n_plus] == varTYPE::ATOM) {
         char buf[256];
@@ -995,7 +1000,7 @@ void FixConpGA::setup_CELL()
         error->all(FLERR, buf);
       }
     }
-  }
+  } // iEle
 
   if (metal_flag == true && charged_flag == true) {
     error->all(FLERR, "Cannot applied the mixture model with both METAL an "
@@ -1330,7 +1335,7 @@ void FixConpGA::update_Vext()
     int iseq  = GA_seq_arr[iGA];
     int iType = type[iseq];
     int iEle  = GA_Flags[iType];
-    if (Ele_Control_Type[iEle] == CONTROL::METAL) {
+    if (Ele_Control_Type[iEle - 1] == CONTROL::METAL) {
       if (GA_Vext_type[iType] != varTYPE::ATOM) {
         localGA_Vext[iGA] = half_inv_qe2f * GA_Vext_var[iType] + Uchem;
         // printf("iGA2 = %d\n", iGA);
@@ -9051,6 +9056,21 @@ void FixConpGA::pre_force(int vflag)
       default:;
     }
   }
+}
+
+bigint FixConpGA::count_type(int itype)
+{
+  int* type  = atom->type;
+  int nlocal = atom->nlocal;
+
+  int n = 0;
+  for (int i = 0; i < nlocal; i++)
+    if (type[i] == itype) n++;
+
+  bigint nsingle = n;
+  bigint nall;
+  MPI_Allreduce(&nsingle, &nall, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  return nall;
 }
 
 /*
