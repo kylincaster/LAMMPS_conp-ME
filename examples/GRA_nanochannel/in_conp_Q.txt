@@ -17,7 +17,7 @@ variable dumpSkip   equal 10000
 variable saveSkip   equal 20000
 variable Thigh      equal 1000 # 1000
 
-read_data		./data_min.lammpsdata
+read_data		./data_small.lammpsdata
 #isplace_atoms  all move 5 0 0 units box
 variable		cQ equal 1e-3
 variable		U equal 1 # V
@@ -99,7 +99,7 @@ neigh_modify    every 1 delay 0 check yes
 group       oxygen type 3
 group       hydrogen type 4
 group	    water	type 3 4
-group	    flow 	type 3 4
+group	    flow 	type 3 4 5 6
 group       graphene type 1
 
 
@@ -161,7 +161,7 @@ fix             9 flow temp/berendsen 298.0 298.0 100
 fix_modify      9 temp flow_comtemp
 run				$(50*v_time_scale)
 unfix			conp
-fix                           conp ele conp/GA 1 inv charged 1 ${GA_Q} charged 2 -${GA_Q} pair on tol_style rel_B check_first 10000 0.01 selfGG off first on neutrality on matrix ./a.binmat none debug 0
+fix                           conp ele conp/GA 1 inv charged 1 v_GA_Q charged 2 -${GA_Q} pair on tol_style rel_B check_first 10000 0.01 selfGG off first on neutrality on matrix ./a.binmat none debug 0
 run				$(50*v_time_scale)
 unfix 		  	9
 #ndump			1

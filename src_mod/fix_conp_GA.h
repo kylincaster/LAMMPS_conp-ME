@@ -106,8 +106,8 @@ public:
   CELL Ele_Cell_Model; // Model of CELL
   int Ele_iter;        // total iteration;
   int* Ele_GAnum;      // The number of atoms in each electrode
-  double **Ele_matrix, **Ele_D_matrix;
-  double *Ele_qsum, *Ele_Uchem, *Ele_qave, *Ele_qsq;
+  double **Ele_matrix_IC, **Ele_matrix, **Ele_D_matrix;
+  double *Ele_qsum, *Ele_Uchem, *Ele_qave, *Ele_qsq, *Ele_vect;
   double* localGA_Vext;      // The external potential on each local electrode atoms
   int* GA_Flags;             // The check if this types belong to an electrode, at value =
                              // 0, means the electrolyte.

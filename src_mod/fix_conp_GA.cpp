@@ -102,7 +102,7 @@ using namespace MathConst;
 enum { REV_Q, REV_COUL, REV_COUL_RM, REV_FORCE };
 
 // #define INTEL_MPI
-#define FIX_CONPGA_VERSION 1.68
+#define FIX_CONPGA_VERSION 1.69
 #define xstr(s) str(s)
 #define str(s) #s
 
@@ -301,11 +301,11 @@ FixConpGA::FixConpGA(LAMMPS* lmp, int narg, char** arg) : Fix(lmp, narg, arg)
   pcg_out          = nullptr;
   localGA_Vext     = nullptr;
   localGA_eleIndex = nullptr;
-  Ele_matrix = Ele_D_matrix = nullptr;
-  kspace_g_ewald            = -1;
-  kspace_nn_pppm[0]         = -1;
-  kspace_nn_pppm[1]         = -1;
-  kspace_nn_pppm[2]         = -1;
+  Ele_matrix = Ele_matrix_IC = Ele_D_matrix = nullptr;
+  kspace_g_ewald                            = -1;
+  kspace_nn_pppm[0]                         = -1;
+  kspace_nn_pppm[1]                         = -1;
+  kspace_nn_pppm[2]                         = -1;
   localGA_num = totalGA_num = 0;
   bisect_level              = 0;
   bisect_num                = 1;
@@ -1053,11 +1053,12 @@ void FixConpGA::setup_CELL()
       break;
   }
 
-  memory->create(Ele_qsum, Ele_num * 4, "fix_Conp/GA::setup_CELL()::Ele_qsum");
+  memory->create(Ele_qsum, Ele_num * 5, "fix_Conp/GA::setup_CELL()::Ele_qsum");
 
   Ele_Uchem = Ele_qsum + Ele_num;
   Ele_qave  = Ele_Uchem + Ele_num;
   Ele_qsq   = Ele_qave + Ele_num;
+  Ele_vect  = Ele_qsq + Ele_num;
 }
 
 /* ----------------------------------------------------------------------
@@ -1149,6 +1150,8 @@ FixConpGA::~FixConpGA()
   }
   memory->destroy(Ele_GAnum);
   memory->destroy(Ele_matrix);
+  memory->destroy(Ele_matrix_IC);
+
   memory->destroy(Ele_D_matrix);
   memory->destroy(Ele_qsum);
   memory->destroy(localGA_eleIndex);
@@ -1195,25 +1198,26 @@ int FixConpGA::setmask()
 void FixConpGA::post_run()
 {
   double inv_Ele_iter = 1.0 / Ele_iter;
-  double double_qe2f  = 2 * force->qe2f;
-
+  // double double_qe2f  = 2 * force->qe2f;
   if (me == 0) {
     switch (Ele_Cell_Model) {
       case CELL::POT:
         if (update_Vext_flag) break;
+        // XXXX
         utils::logmesg(lmp, "\n---------- [Conp] Electrode charge fluctuation for {} MD invoking ---------------\n", Ele_iter);
         for (int i = 0; i < Ele_num; i++) {
+          printf("%d, %.10g, %.10g", i, Ele_qave[i], Ele_qsq[i]);
           int iType    = Ele_To_aType[i];
           double q_ave = Ele_qave[i] * inv_Ele_iter;
           double q_std = sqrt(Ele_qsq[i] * inv_Ele_iter - q_ave * q_ave);
-          double U     = (GA_Vext_var[iType] - Uchem) * double_qe2f; // GA  - Uchem
+          double U     = GA_Vext_var[iType] - Uchem * inv_qe2f; // GA  - Uchem
           utils::logmesg(lmp, "[Ele{:2d}] <Q> = {:.12f}; std{{Q}} = {:.12f} @ Pot {:.6f} V\n", i + 1, q_ave, q_std, U);
         }
         utils::logmesg(lmp, "\n");
         for (int i = 0; i < Ele_num; i++) {
-          double q_ave = Ele_qave[i] * inv_Ele_iter / Ele_GAnum[i];
+          double q_ave = Ele_qave[i] * inv_Ele_iter;
           double q_std = sqrt(Ele_qsq[i] * inv_Ele_iter - q_ave * q_ave) / Ele_GAnum[i];
-          double U     = (localGA_Vext[i] - Uchem) * double_qe2f;
+          q_ave /= Ele_GAnum[i];
           utils::logmesg(lmp, "[Ele{:2d}] <q_i> = {:.12f}; std{{q_i}} = {:.12f}; Ele. Atom = {}\n", i + 1, q_ave, q_std, Ele_GAnum[i]);
         }
         utils::logmesg(lmp, "-------------End [Conp] Electrode charge fluctuation -------------\n\n");
@@ -1224,9 +1228,9 @@ void FixConpGA::post_run()
         for (int i = 0; i < Ele_num; i++) {
           int iType    = Ele_To_aType[i];
           double U_ave = Ele_qave[i] * inv_Ele_iter;
-          double U_std = sqrt(Ele_qsq[i] * inv_Ele_iter - U_ave * U_ave) * double_qe2f;
+          double U_std = sqrt(Ele_qsq[i] * inv_Ele_iter - U_ave * U_ave) * inv_qe2f;
           double Q     = GA_Vext_var[iType];
-          U_ave *= double_qe2f;
+          U_ave *= inv_qe2f;
           utils::logmesg(lmp, "[Ele{:2d}] <U> = {:.12f} V; std{{U}} = {:.12f} V @ Charge {:.6f} e\n", i + 1, U_ave, U_std, Q);
         }
         utils::logmesg(lmp, "-------------End [Conp] Electrode Potential fluctuation -------------\n\n");
@@ -1284,10 +1288,10 @@ void FixConpGA::update_Vext()
   // printf("open update_Vext\n");
   FUNC_MACRO(0);
   // setup_Vext() TODO if error
-  int n                = atom->ntypes;
-  int nlocal           = atom->nlocal;
-  int* type            = atom->type;
-  double half_inv_qe2f = 0.5 * inv_qe2f;
+  int n            = atom->ntypes;
+  int nlocal       = atom->nlocal;
+  int* type        = atom->type;
+  double half_qe2f = 0.5 / inv_qe2f;
 
   std::map<int, double*>::iterator it;
   for (it = VextID_to_ATOM_store.begin(); it != VextID_to_ATOM_store.end(); it++) {
@@ -1337,13 +1341,13 @@ void FixConpGA::update_Vext()
     int iEle  = GA_Flags[iType];
     if (Ele_Control_Type[iEle - 1] == CONTROL::METAL) {
       if (GA_Vext_type[iType] != varTYPE::ATOM) {
-        localGA_Vext[iGA] = half_inv_qe2f * GA_Vext_var[iType] + Uchem;
+        localGA_Vext[iGA] = half_qe2f * GA_Vext_var[iType] + Uchem;
         // printf("iGA2 = %d\n", iGA);
         // if (iGA == 0) printf("%d, localGA_Vext[iGA] = %f\n", iGA,
         // localGA_Vext[iGA]);
       } else {
         // printf("iseq = %d\n", iseq);
-        localGA_Vext[iGA] = half_inv_qe2f * GA_Vext_ATOM_data[iType][iseq] + Uchem;
+        localGA_Vext[iGA] = half_qe2f * GA_Vext_ATOM_data[iType][iseq] + Uchem;
         // if (GA_Vext_ATOM_Store[iType][iGA] != 0.5) printf("wrong = %f!\n",
         // GA_Vext_ATOM_Store[iType][iGA]); printf("iGA = %d\n", iGA);
       }
@@ -2335,9 +2339,7 @@ void FixConpGA::setup_once()
     }
   }
 
-  if (Ele_Cell_Model == CELL::Q) {
-    make_ELE_matrix();
-  }
+  make_ELE_matrix();
 
   if (minimizer == MIN::PCG && pcg_shift_scale > 0) {
     pcg_P_shift();
@@ -2562,7 +2564,9 @@ CLOCKS_PER_SEC;
 // make_ELE_matrix
 void FixConpGA::make_ELE_matrix()
 {
+  memory->create(Ele_matrix_IC, Ele_num, Ele_num, "fix_Conp/GA::make_ELE_matrix()::Ele_matrix");
   memory->create(Ele_matrix, Ele_num, Ele_num, "fix_Conp/GA::make_ELE_matrix()::Ele_matrix");
+
   if (localGA_num != 0) {
     memory->create(Ele_D_matrix, localGA_num, Ele_num, "fix_Conp/GA::make_ELE_matrix()::Ele_D_matrix");
   } else {
@@ -2570,7 +2574,7 @@ void FixConpGA::make_ELE_matrix()
   }
 
   if (AAA != nullptr) {
-    return make_ELE_matrix_direct();
+    make_ELE_matrix_direct();
   } else {
     switch (minimizer) {
       case MIN::CG:
@@ -2582,6 +2586,49 @@ void FixConpGA::make_ELE_matrix()
       default:
         error->all(FLERR, "make_ELE_matrix() only valid for MIN::CG, MIN::PCG or "
                           "MIN::PPCG methods");
+    }
+  }
+
+  double half_qe2f   = 0.5 * force->qe2f;
+  double half_qe2f_i = 1 / half_qe2f;
+  if (me == 0) {
+    utils::logmesg(lmp, "  Inv_Ele_matrix =   [units e/V]\n");
+    for (int i = 0; i < Ele_num; i++) {
+      utils::logmesg(lmp, "    ");
+      for (int j = 0; j < Ele_num; j++) {
+        utils::logmesg(lmp, " {:16.12g}", Ele_matrix_IC[i][j] * half_qe2f);
+      }
+      utils::logmesg(lmp, "\n");
+    }
+    utils::logmesg(lmp, "  Ele_matrix =   [units V/e]\n");
+    for (int i = 0; i < Ele_num; i++) {
+      utils::logmesg(lmp, "    ");
+      for (int j = 0; j < Ele_num; j++) {
+        utils::logmesg(lmp, " {:16.12g}", Ele_matrix[i][j] * half_qe2f_i);
+      }
+      utils::logmesg(lmp, "\n");
+    }
+  }
+
+  double total_sum = 0;
+  for (int i = 0; i < Ele_num; i++) {
+    Ele_vect[i] = 0;
+    for (int j = 0; j < Ele_num; j++) {
+      Ele_vect[i] += Ele_matrix_IC[i][j];
+    }
+    total_sum += Ele_vect[i];
+  }
+
+  for (int i = 0; i < Ele_num; i++) {
+    Ele_vect[i] /= total_sum;
+  }
+  // For standard Two-electrode setup
+  if (Ele_num == 2) {
+    double Ele_matrix_IC_det = Ele_matrix_IC[0][0] * Ele_matrix_IC[1][1] - Ele_matrix_IC[0][1] * Ele_matrix_IC[1][0];
+    double capacitance       = Ele_matrix_IC_det / total_sum;
+    if (me == 0) {
+      // const double q_const = 1.60217646E-19;
+      utils::logmesg(lmp, "[Conp] Vaccuum Capacitance = {:16.12g} [e/V]\n", capacitance * half_qe2f);
     }
   }
 }
@@ -2600,7 +2647,7 @@ void FixConpGA::make_ELE_matrix_direct()
   // localGA_EachProc.reserve(1);
   // localGA_EachProc_Dipl.reserve(1);
   MPI_Allgatherv(localGA_eleIndex, localGA_num, MPI_INT, totalGA_eleIndex, &localGA_EachProc.front(), &localGA_EachProc_Dipl.front(), MPI_INT, world);
-  set_zeros(&Ele_matrix[0][0], 0, Ele_num_sqr);
+  set_zeros(&Ele_matrix_IC[0][0], 0, Ele_num_sqr);
   set_zeros(&Ele_D_matrix[0][0], 0, localGA_num * Ele_num);
 
   for (int i = 0; i < localGA_num; i++) {
@@ -2610,21 +2657,15 @@ void FixConpGA::make_ELE_matrix_direct()
       // printf("iEle = %d, jEle = %d\n", iEle, jEle);
       double value = AAA[i][j];
       Ele_D_matrix[i][jEle] += value;
-      Ele_matrix[iEle][jEle] += value;
+      Ele_matrix_IC[iEle][jEle] += value;
     }
     /* code */
   }
 
-  MPI_Allreduce(MPI_IN_PLACE, &Ele_matrix[0][0], Ele_num_sqr, MPI_DOUBLE, MPI_SUM, world);
+  MPI_Allreduce(MPI_IN_PLACE, &Ele_matrix_IC[0][0], Ele_num_sqr, MPI_DOUBLE, MPI_SUM, world);
+  std::copy(Ele_matrix_IC[0], Ele_matrix_IC[0] + Ele_num_sqr, Ele_matrix[0]);
 
-#ifndef CONP_NO_DEBUG
-  if (me == 0 && DEBUG_LOG_LEVEL > 0) print_vec(Ele_matrix[0], Ele_num_sqr, "inv_Ele_matrix");
   inv_AAA_LAPACK(Ele_matrix[0], Ele_num);
-  if (me == 0 && DEBUG_LOG_LEVEL > 0) print_vec(Ele_matrix[0], Ele_num_sqr, "Ele_matrix");
-#else
-  inv_AAA_LAPACK(Ele_matrix[0], Ele_num);
-#endif
-
   memory->destroy(totalGA_eleIndex);
   // memory->destroy(matrix);
 }
@@ -2663,7 +2704,7 @@ void FixConpGA::make_ELE_matrix_iterative()
     cl_atom[iseq] = 0.0; // (-1 + localGA_Vext[i]); // * qtmp;
   }
 
-  set_zeros(&Ele_matrix[0][0], 0, Ele_num_sqr);
+  set_zeros(&Ele_matrix_IC[0][0], 0, Ele_num_sqr);
   for (int iEle = 0; iEle < Ele_num; iEle++) {
     for (int i = 0; i < localGA_num; i++) {
       int iseq       = GA_seq_arr[i];
@@ -2693,7 +2734,7 @@ void FixConpGA::make_ELE_matrix_iterative()
       double value = q[iseq];
       // res += value;
       Ele_D_matrix[i][iEle] = value;
-      Ele_matrix[iEle][i_in_Ele] += value;
+      Ele_matrix_IC[iEle][i_in_Ele] += value;
       q[iseq] = 1e-30;
     }
     // printf("res = %.18f\n", res);
@@ -2709,14 +2750,10 @@ void FixConpGA::make_ELE_matrix_iterative()
     q[iseq]  = q_store_arr[i];
   }
 
-  MPI_Allreduce(MPI_IN_PLACE, &Ele_matrix[0][0], Ele_num_sqr, MPI_DOUBLE, MPI_SUM, world);
-#ifndef CONP_NO_DEBUG
-  if (me == 0 && DEBUG_LOG_LEVEL > 0) print_vec(Ele_matrix[0], Ele_num_sqr, "inv_Ele_matrix");
+  MPI_Allreduce(MPI_IN_PLACE, &Ele_matrix_IC[0][0], Ele_num_sqr, MPI_DOUBLE, MPI_SUM, world);
+  std::copy(Ele_matrix_IC[0], Ele_matrix_IC[0] + Ele_num_sqr, Ele_matrix[0]);
+
   inv_AAA_LAPACK(Ele_matrix[0], Ele_num);
-  if (me == 0 && DEBUG_LOG_LEVEL > 0) print_vec(Ele_matrix[0], Ele_num_sqr, "Ele_matrix");
-#else
-  inv_AAA_LAPACK(Ele_matrix[0], Ele_num);
-#endif
 }
 // Transform the distributed AAA matrix into S matrix for neutral electrolyte
 void FixConpGA::make_S_matrix()
@@ -5901,18 +5938,18 @@ void FixConpGA::update_charge_ppcg()
   curriter = iter;
 
   neighbor->ago = neighbor_ago_store; // 0; // neighbor_ago_store;
-
+  set_zeros(Ele_qsum, 0, Ele_num);
+  for (int i = 0; i < localGA_num; i++) {
+    int iEle = localGA_eleIndex[i];
+    int iseq = GA_seq_arr[i];
+    Ele_qsum[iEle] += q_store_arr[iseq];
+  }
   if (postreat_flag) {
     MPI_Allreduce(&qlocalGA_incr_sum, &qGA_incr_sum, 1, MPI_DOUBLE, MPI_SUM, world);
     // PPCG
-    double* Ele_qsum_ptr = Ele_qsum;
+    double* Ele_qsum_ptr;
     if (calc_EleQ_flag) {
-      set_zeros(Ele_qsum, 0, Ele_num);
-      for (int i = 0; i < localGA_num; i++) {
-        int iEle = localGA_eleIndex[i];
-        int iseq = GA_seq_arr[i];
-        Ele_qsum[iEle] += q_store_arr[iseq];
-      }
+      Ele_qsum_ptr = Ele_qsum;
     } else {
       Ele_qsum_ptr = nullptr;
     }
@@ -6474,18 +6511,21 @@ void FixConpGA::update_charge_pcg()
 #endif
 
   neighbor->ago = neighbor_ago_store; // 0; // neighbor_ago_store;
+
+  set_zeros(Ele_qsum, 0, Ele_num);
+  for (int i = 0; i < localGA_num; i++) {
+    int iEle = localGA_eleIndex[i];
+    int iseq = GA_seq_arr[i];
+    Ele_qsum[iEle] += q_store_arr[iseq];
+  }
+
   if (postreat_flag) {
     // PCG
     MPI_Allreduce(&qlocalGA_incr_sum, &qGA_incr_sum, 1, MPI_DOUBLE, MPI_SUM, world);
     // localGA_charge_neutrality(qGA_incr_sum + qsum_store, q_store_arr);
-    double* Ele_qsum_ptr = Ele_qsum;
+    double* Ele_qsum_ptr;
     if (calc_EleQ_flag) {
-      set_zeros(Ele_qsum, 0, Ele_num);
-      for (int i = 0; i < localGA_num; i++) {
-        int iEle = localGA_eleIndex[i];
-        int iseq = GA_seq_arr[i];
-        Ele_qsum[iEle] += q_store_arr[iseq];
-      }
+      Ele_qsum_ptr = Ele_qsum;
     } else {
       Ele_qsum_ptr = nullptr;
     }
@@ -6976,16 +7016,19 @@ void FixConpGA::update_charge_cg(bool far_flag)
   curriter = iter;
 
   neighbor->ago = neighbor_ago_store; // 0; // neighbor_ago_store;
+
+  set_zeros(Ele_qsum, 0, Ele_num);
+  for (int i = 0; i < localGA_num; i++) {
+    int iEle = localGA_eleIndex[i];
+    int iseq = GA_seq_arr[i];
+    Ele_qsum[iEle] += q_store_arr[iseq];
+  }
+
   if (postreat_flag) {
     MPI_Allreduce(&qlocalGA_incr_sum, &qGA_incr_sum, 1, MPI_DOUBLE, MPI_SUM, world);
-    double* Ele_qsum_ptr = Ele_qsum;
+    double* Ele_qsum_ptr;
     if (calc_EleQ_flag) {
-      set_zeros(Ele_qsum, 0, Ele_num);
-      for (int i = 0; i < localGA_num; i++) {
-        int iEle = localGA_eleIndex[i];
-        int iseq = GA_seq_arr[i];
-        Ele_qsum[iEle] += q_store_arr[iseq];
-      }
+      Ele_qsum_ptr = Ele_qsum;
     } else {
       Ele_qsum_ptr = nullptr;
     }
@@ -7038,6 +7081,13 @@ double FixConpGA::POST2ND_charge(double value, double* Ele_qsum0, double* q)
   FUNC_MACRO(0);
   switch (Ele_Cell_Model) {
     case CELL::POT:
+      // for INV model, the Ele_qum is not NULL,
+      // which stores the net charges on each electrode.
+      // Then, qlocal_charge is summed.
+
+      // for iterative model value already contains the excess charge on all electrodes
+      // so, Ele_qsum0 is set to be NULL
+
       if (Ele_qsum0 != nullptr) {
         double qlocal_charge = 0;
         for (int i = 0; i < Ele_num; i++) {
@@ -7202,6 +7252,12 @@ double FixConpGA::POST2ND_localGA_neutrality(double qsum_totalGA, double* q)
   for (int i = 0; i < localGA_num; i++) {
     localGA_Vext[i] -= Ushift;
   }
+  if (me == 0) {
+    for (int i = 0; i < Ele_num; i++) {
+      Ele_qsum[i] -= qsum_totalGA * Ele_vect[i];
+    }
+  }
+
   neutrality_state = false; // TODO to make it true;
   return Ushift;
 }
@@ -7282,7 +7338,6 @@ void FixConpGA::update_charge_AAA()
     // printf("CPU%d: %lu[tag:%d] Q = %20.18g, Shift_Value = %g\n", me, i,
     // tag[GA_seq_arr[i]], q[GA_seq_arr[i]], value);
   }
-
   // printf("BBB_localGA[i] = %f, %f\n", BBB[0], BBB[1]);
   // printf("q1,q2= %.10f, %.10f, %.10f, %.10f\n", q[0], q[1], q[2], q[3]);
   // printf("qlocalGA_incr_sum = %f, %f\n", qlocalGA_incr_sum, qsum_store);
@@ -7294,6 +7349,7 @@ void FixConpGA::update_charge_AAA()
     POST2ND_charge(qtotal_SOL, Ele_qsum, q);
     // if (me == 0 && DEBUG_LOG_LEVEL > 0) utils::logmesg(lmp, "qsum = {:.16}\n", qsum);
   }
+
   // printf("q1,q2= %.10f, %.10f, %.10f, %.10f\n", q[0], q[1], q[2], q[3]);
 
   reset_nonzero();
@@ -9037,7 +9093,8 @@ void FixConpGA::pre_force(int vflag)
   // force_clear();
   // printf("end of pre_force()\n");
   if (vflag != -1) {
-    Ele_iter++;
+    Ele_iter++; // XXXX
+    MPI_Allreduce(MPI_IN_PLACE, Ele_qsum, Ele_num, MPI_DOUBLE, MPI_SUM, world);
     switch (Ele_Cell_Model) {
       case CELL::POT:
         for (int i = 0; i < Ele_num; i++) {
@@ -9055,6 +9112,7 @@ void FixConpGA::pre_force(int vflag)
         break;
       default:;
     }
+    // printf("Ele_qsum[0] = %.10g, %.10g, %.10g\n", Ele_qsum[0], Ele_qave[0], Ele_qsq[0]);
   }
 }
 

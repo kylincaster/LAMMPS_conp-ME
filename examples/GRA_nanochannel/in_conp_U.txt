@@ -12,15 +12,15 @@ angle_style     harmonic
 #rocessors	   2 2 1
 
 # +++++++++ Variable to control the output ++++++++++
-variable thermoSkip equal 100 # 200
+variable thermoSkip equal 200
 variable dumpSkip   equal 10000
 variable saveSkip   equal 20000
 variable Thigh      equal 1000 # 1000
 
-read_data		./data_min.lammpsdata
+read_data		./data_small.lammpsdata
 #isplace_atoms  all move 5 0 0 units box
 variable		cQ equal 1e-3
-variable		U equal 1 # V
+variable		U equal 0.5 # V
 
 variable		time_scale equal 10 # 00
 variable		time_scale_ions equal 5 # 00
@@ -99,7 +99,7 @@ neigh_modify    every 1 delay 0 check yes
 group       oxygen type 3
 group       hydrogen type 4
 group	    water	type 3 4
-group	    flow 	type 3 4
+group	    flow 	type 3 4 5 6
 group       graphene type 1
 
 
@@ -154,14 +154,14 @@ restart         ${saveSkip} restart
 reset_timestep	0
 write_dump 		all atom init.lammpstrj
 
-#ump			1 ele custom 50 ele.dump id type c_coul q v_epot
+dump			1 ele custom 50 ele.dump id type c_coul q v_epot
 fix				1 flow nve
 fix             shakeFix water shake 0.0001 20 0 b 1 a 1
 fix             9 flow temp/berendsen 298.0 298.0 100
 fix_modify      9 temp flow_comtemp
 run				$(50*v_time_scale)
 unfix			conp
-fix				conp ele conp/GA 1 cg metal 1 ${U} metal 2 -${U} pair on tol_style rel_B selfGG on first off neutrality on matrix ./a.binmat none debug 0
+fix				conp ele conp/GA 1 inv metal 1 v_U metal 2 -${U} pair on tol_style rel_B selfGG on first off neutrality off matrix ./a.binmat none debug 0 units eV 
 run				$(50*v_time_scale)
 unfix 		  	9
 #ndump			1
