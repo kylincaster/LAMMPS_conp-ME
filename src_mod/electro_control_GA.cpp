@@ -12,7 +12,7 @@
 #include "comm.h"
 #include "compute.h"
 #include "error.h"
-#include "fix_conp_GA.h"
+#include "fix_conp_ME.h"
 #include "force.h"
 #include "kspace.h"
 #include "memory.h"

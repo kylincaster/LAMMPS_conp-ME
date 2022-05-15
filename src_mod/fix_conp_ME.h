@@ -25,13 +25,13 @@ electrode atoms by Lagrange multiplyer constrain;
 #ifdef FIX_CLASS
 
 // clang-format off
-FixStyle(conp/GA, FixConpGA)
+FixStyle(conp/ME, FixConpGA)
 // clang-format on
 
 #else
 
-#ifndef LMP_FIX_CONP_GA_H
-#define LMP_FIX_CONP_GA_H
+#ifndef LMP_FIX_CONP_ME_H
+#define LMP_FIX_CONP_ME_H
 #define FIX_CONP_GA_WIDTH 255
 
 // #define CONP_NO_DEBUG
@@ -102,17 +102,19 @@ public:
   std::vector<int> localGA_EachProc, localGA_EachProc_Dipl;
 
   // solving the constant charge method
-  int Ele_num;         // Number of electrode
-  CELL Ele_Cell_Model; // Model of CELL
-  int Ele_iter;        // total iteration;
-  int* Ele_GAnum;      // The number of atoms in each electrode
-  double **Ele_matrix_IC, **Ele_matrix, **Ele_D_matrix;
+  int Ele_num;            // Number of electrode
+  CELL Ele_Cell_Model;    // Model of CELL
+  int Ele_iter;           // total iteration;
+  int* Ele_GAnum;         // The number of atoms in each electrode
+  double** Ele_matrix_IC; // The capacitance coefficient matrix [Ele_num][Ele_num], coarse-grained from E^{-1}
+  double** Ele_D_matrix;  // The partition matrix  [GA_num][Ele_num], coarse-grained along the row from E^{-1}
+  double** Ele_matrix;    // The elastance coefficient matrix, the reciprocal of {Ele_matrix_IC}
   double *Ele_qsum, *Ele_Uchem, *Ele_qave, *Ele_qsq, *Ele_vect;
   double* localGA_Vext;      // The external potential on each local electrode atoms
   int* GA_Flags;             // The check if this types belong to an electrode, at value =
                              // 0, means the electrolyte.
   CONTROL* Ele_Control_Type; //
-  int* Ele_To_aType;
+  int* Ele_To_aType;         // Ele_index to Atype
   std::map<int, double*> VextID_to_ATOM_store;
   int* localGA_eleIndex;
   int *all_ghostGA_ind, *comm_recv_arr, all_ghostGA_num;
@@ -136,8 +138,9 @@ public:
   double Xi_self;
   // Ushift the magnitude of the potential shift by the neutraliziation
   // constraint in the last iteration.
-  double Uchem, Ushift, gewald_tune_factor, qtotal_SOL,
-      qsum_set; // qsum, qsqsum,
+  double temp;
+  double Uchem, Uchem_sum, Uchem_sqr, Ushift, UQ_corr;
+  double gewald_tune_factor, qtotal_SOL, qsum_set; // qsum, qsqsum,
   double AAA_sumsum, inv_AAA_sumsum, *self_GreenCoef, cut_coulsq, cut_coul, cut_coul_add;
   bool neutrality_flag, neutrality_state, pair_flag,
       fast_bvec_flag; // self_Xi_flag, nonneutral_removel_flag;
@@ -173,6 +176,7 @@ public:
 
   // int firstgroup; //  The group resorted onto the first group in atom Module
   double tolerance, inv_qe2f, pair_g_ewald, pseuo_tolerance;
+  double Cap_vacc;
   double kspace_g_ewald, force_analysis_res, force_analysis_max;
   int kspace_nn_pppm[3];
   char AAA_save[FIX_CONP_GA_WIDTH + 1];

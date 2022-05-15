@@ -78,7 +78,7 @@ variable		  GA_num equal ${num}
 variable		  pe equal pe/${GA_num}
 
 
-compute			  pe 	all   pe/atom_GA
+compute			  pe 	all   pe/atom/ME
 compute			  charge all property/atom q
 compute 		  q0 GA_lo reduce ave c_charge
 compute 		  q1 GA_hi reduce ave c_charge
@@ -124,7 +124,7 @@ unfix			  conp
 variable		  U_cap equal 1
 # ------------------------ Test the validate of mat save and force -----------------
 print "INFO: Test the matrix save/load with different number of nprocs and compatibility with ewald summation"
-fix				conp SLG conp/GA ${conp_run} inv metal 1 -${U_cap} metal 2 ${U_cap} tol 1e-12 max 100 tol_style max_Q printf_me -1 matrix ${mat_name} symmetry off neutrality off pair on bvec 1 units eV first off pcg_mat DC 0.1 1e-8 Uchem_extract off check_first ${tol_first} ${tol} check on debug 0 scalapack ${scalapack_num}
+fix				conp SLG conp/ME ${conp_run} inv metal 1 -${U_cap} metal 2 ${U_cap} tol 1e-12 max 100 tol_style max_Q printf_me -1 matrix ${mat_name} symmetry off neutrality off pair on bvec 1 units eV first off pcg_mat DC 0.1 1e-8 Uchem_extract off check_first ${tol_first} ${tol} check on debug 0 scalapack ${scalapack_num}
 #ix				conp SLG null_print
 thermo 			  1 # ${runs}
 run				  ${multi_run}

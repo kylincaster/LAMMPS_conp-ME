@@ -58,7 +58,7 @@ class TestPCG:
         config["selfGG"] = selfGG
         config["tol_style"] = tol_style
         config["newton"] = newton
-        config["kspace"] = '"pppm_conp/GA 1e-4"'
+        config["kspace"] = '"pppm_conp/ME 1e-4"'
         result = run.run(config, 13)
         assert np.all(result[0] == result[12])
 

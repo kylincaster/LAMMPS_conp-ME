@@ -143,7 +143,7 @@ set 			  group GA_lo charge  $(v_qS*v_GA_qi)
 set 			  group GA_hi charge -$(v_qS*v_GA_qi)
 variable		  U_cap equal ${U_cap}
 
-fix				conp SLG conp/GA ${conp_run} ${minimizer} charged 1 -${U_cap} charged 2 ${U_cap} tol 1e-14 tol_style ${tol_style} max 100 printf_me -1 matrix a.binmat none symmetry off neutrality ${neutral} pair ${pair} bvec 1 units eV first ${first} check_first ${tol_first} ${tol} check on debug 0 selfGG ${selfGG}
+fix				conp SLG conp/ME ${conp_run} ${minimizer} charged 1 -${U_cap} charged 2 ${U_cap} tol 1e-14 tol_style ${tol_style} max 100 printf_me -1 matrix a.binmat none symmetry off neutrality ${neutral} pair ${pair} bvec 1 units eV first ${first} check_first ${tol_first} ${tol} check on debug 0 selfGG ${selfGG}
 thermo_style      custom v_FFF c_avesq_z c_avesq_pe c_avesq_fz c_q0 c_q1 c_ions_q2 c_GAlo_q2 c_GAhi_q2 f_conp v_prun 
 thermo_modify 		format line "%.0f %g %g %g %g %g %g %g %g %g %g %d" 
 thermo 			  1 # ${runs}

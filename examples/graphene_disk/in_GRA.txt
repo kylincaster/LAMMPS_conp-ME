@@ -1,0 +1,71 @@
+# water flow in a (20,20)@(25,25), ~ 30 nm long DWCNT
+# mpiexec -np 12 -localonly ./lmp_mpi.exe -in cont.acc -log log.txt 
+shell shutdown -a
+# System and potential definition
+units           real
+timestep		1 # 1.0e-3 # 1fs = 10^-15s
+boundary        p p p
+atom_style      full
+bond_style      harmonic
+angle_style     harmonic
+#rocessors	   4 2 3
+#rocessors	   2 2 1
+
+#--------------Create Atoms----------------
+variable	radiu equal 15
+variable	dist  equal  5
+variable	boxLen equal 10
+# copy https://www.ericnhahn.com/tutorials/lammps-tutorials/crumpled-graphene
+variable sixth equal "1/6"
+variable twothirds equal "2/3"
+variable alattice equal "2.4595"
+variable a1lattice equal "1"
+variable a2lattice equal "1.73203"
+
+lattice custom ${alattice} a1 ${a1lattice} 0  0  a2 0 ${a2lattice} 0 &
+			basis 0 0 0  basis 0.5 ${sixth} 0 &
+			basis 0.5 0.5 0 basis 0 ${twothirds} 0
+
+region BOX block -${boxLen} ${boxLen} -${boxLen}  ${boxLen} -0.5 30 units lattice
+region GRA cylinder z 0 0 ${radiu} -0.5 0.5  units box
+
+
+create_box 2 BOX
+create_atoms 1 region GRA
+create_atoms 2 single 0 0 ${dist} units box
+mass * 12.0107
+#------------------
+
+pair_style 		lj/cut/point/long 10 10 point 1 2.934 point 2 0.3
+pair_coeff    	* *     0.000000000000e+000 0.000000000000
+#space_style    pppm/cg  1e-4 1e-6
+kspace_style 	pppm_conp/ME 1e-4 sv_SOL on fixed on
+#kspace_modify   diff ad
+
+neighbor        2.0 bin
+neigh_modify    every 1 delay 0 check yes
+
+group       ele type 1
+group       ions type 2
+set 		group ele charge 1
+set 		group ions charge -1
+compute		coul all pe/atom/ME coul kspace
+variable	epot atom c_coul/q
+fix			conp all null_print
+compute 	Q all property/atom q
+compute		Qsum ele reduce sum c_Q
+
+thermo_style	custom step cpu evdwl ecoul elong pe ke etotal c_Qsum f_conp
+
+thermo          1
+thermo_modify   flush yes
+
+reset_timestep	0
+write_dump 		all atom init.lammpstrj
+
+dump			1 all custom 1 ele.lammpstrj id type xu yu zu q v_epot c_coul
+unfix			conp
+fix				conp all conp/ME 1 cg metal 1 0 metal 2 1 pair on tol_style rel_B selfGG on first off neutrality on matrix ./a0.binmat none debug 0 units eV 
+run				10
+
+run				10

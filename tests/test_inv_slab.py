@@ -15,7 +15,7 @@ config_save = {
     "pair": "on",
     "newton": "on",
     "first": "on",
-    "kspace_style": '"pppm_conp/GA 1e-4"',
+    "kspace_style": '"pppm_conp/ME 1e-4"',
 }
 OnOFF = ["on", "off"]
 
@@ -44,7 +44,7 @@ class TestINVSlab:
 
     def test_pppm_la(self):
         config = config_save.copy()
-        config["kspace_style"] = '"pppm_la_conp/GA 1e-4"'
+        config["kspace_style"] = '"pppm_la_conp/ME 1e-4"'
         result = run.run(config, 13)
         assert np.all(result[0] == result[12])
 

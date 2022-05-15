@@ -24,7 +24,7 @@
 #ifdef KSPACE_CLASS
 
 // clang-format off
-KSpaceStyle(pppm_la_conp/GA, PPPM_LA_conp_GA)
+KSpaceStyle(pppm_la_conp/ME, PPPM_LA_conp_GA)
 // clang-format on
 
 #else

@@ -25,7 +25,7 @@
 #ifdef COMPUTE_CLASS
 
 // clang-format off
-ComputeStyle(pe/atom_GA, ComputePEAtomGA)
+ComputeStyle(pe/atom/ME, ComputePEAtomGA)
 // clang-format on
 
 #else

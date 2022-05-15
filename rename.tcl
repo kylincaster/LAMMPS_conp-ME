@@ -1,6 +1,6 @@
 #!/usr/bin/env tclsh
 
-set res [ exec grep FIX_CONPGA_VERSION ./src_mod/fix_conp_GA.cpp | head -n 1 ]
+set res [ exec grep FIX_CONPGA_VERSION ./src_mod/fix_conp_ME.cpp | head -n 1 ]
 set res [split $res]
 set VERSION [lindex $res 2]
 set LMP_MAKE [lindex $argv 0]

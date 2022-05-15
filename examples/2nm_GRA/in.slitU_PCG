@@ -94,7 +94,7 @@ pair_coeff    5  6     6.009427739e-003 3.320379522
 pair_coeff    6  6     26.20203162e-003 4.012607826504
 ###+++++++++++++++++++++++++++End of Force Field Setup+++++++++++++++++++++++++++####
 
-kspace_style    pppm_conp/GA 0.001 sv_SOL on
+kspace_style    pppm_conp/ME 0.001 sv_SOL on
 kspace_modify   slab 3
 #space_modify   gewald 0.32508 mesh $(v_xsl) $(v_ysl) 2 slab 3
 #space_modify   gewald 0.32508 mesh $(18*v_xsl) $(18*v_ysl) 30 slab 3
@@ -140,7 +140,7 @@ set    	group GA4 charge  ${charge}
 # global output definition
 compute     flow_temp flow temp
 compute     flow_comtemp flow temp/com
-compute         pe_all all pe/atom_GA coul kspace
+compute         pe_all all pe/atom/ME coul kspace
 compute         q all property/atom q
 compute         q_GA4  GA4 reduce ave c_q
 #ompute     coul_all all pe/atom coul kspace
@@ -208,9 +208,9 @@ variable                U_cap equal 0.5
 
 #ix			 conp all null_print
 
-fix          conp graphene conp/GA 1 inv metal 3 -${U_cap} metal 4 ${U_cap} neutrality on pair on units eV first on matrix a0_${sl}.binmat auto selfGG off debug 0 check_first 3 1e-12 check off Uchem_extract off
+fix          conp graphene conp/ME 1 inv metal 3 -${U_cap} metal 4 ${U_cap} neutrality on pair on units eV first on matrix a0_${sl}.binmat auto selfGG off debug 0 check_first 3 1e-12 check off Uchem_extract off
 
-# fix          conp graphene conp/GA 1 pcg metal 3 -${U_cap} metal 4 ${U_cap} neutrality on pair on units eV first on tol 1e-6 tol_style rel_B max 100 printf_me -1 pcg_mat DC 0.079 1e-6 Uchem_extract off pshift_scale 1 PCG-DC_map_size 1
+# fix          conp graphene conp/ME 1 pcg metal 3 -${U_cap} metal 4 ${U_cap} neutrality on pair on units eV first on tol 1e-6 tol_style rel_B max 100 printf_me -1 pcg_mat DC 0.079 1e-6 Uchem_extract off pshift_scale 1 PCG-DC_map_size 1
 
 thermo_style    custom step cpu c_flow_comtemp evdwl ecoul elong pe ke etotal press pxx pyy pzz c_q_GA4 f_conp[1]
 

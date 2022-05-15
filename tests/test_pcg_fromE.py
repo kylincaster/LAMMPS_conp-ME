@@ -12,7 +12,7 @@ config_save = {
     "pair": "on",
     "newton": "on",
     "first": "on",
-    "kspace": '"pppm_conp/GA 1e-4"',
+    "kspace": '"pppm_conp/ME 1e-4"',
     "selfGG": "on",
     "cg_style": "pcg",
     "tol_style": "rel_B",

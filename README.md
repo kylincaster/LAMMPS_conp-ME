@@ -1,12 +1,12 @@
-# LAMMPS Constant Potential Simulation for Graphene Electrode (**Conp/GA**)
+# LAMMPS Constant Potential Simulation for Graphene Electrode (**Conp/ME**)
 
 A LAMMPS plugin for constant potential simulation
 
 ## Features
 
-The **Conp/GA** package is designed to perform constant potential simulation in LAMMPS MD simulation package. This project is inspired by [Wang's work](https://github.com/zhenxingwang/lammps-conp) on the constant potential method (**CPM**) for the metal electrode.[[1]](#Ref.1) While, our package handles the charge polarization of graphene (GA) or other metallic materials using the LAMMPS's existing electrostatics code in KSPACE package rather than the extra Gaussian Ewald summation as proposed in the seminal Siepmann and Sprik’s work [[2]](#Ref.2) and later reformulated by Reed et al.[[3]](#Ref.3) Following the derivation by Gingrich and Wilson [[4]](#Ref.4) and Kiss et al. later [[4]](#Ref.4), the electrostatic calculation between a mixture of Gaussian and point charge can be efficiently handled using the existing particle mesh Ewald method (*e.g.*, PPPM) for point charges. With the incorporation of the Fast Fourier Transform (FFT), a $\mathcal{O}(N\log N)$ scaling of calculation cost is given in our project.
+The **Conp/ME** package is designed to perform constant potential simulation in LAMMPS MD simulation package. This project is inspired by [Wang's work](https://github.com/zhenxingwang/lammps-conp) on the constant potential method (**CPM**) for the metal electrode.[[1]](#Ref.1) While, our package handles the charge polarization of metallic electrode (ME) using the LAMMPS's existing electrostatics code in KSPACE package rather than the extra Gaussian Ewald summation as proposed in the seminal Siepmann and Sprik’s work [[2]](#Ref.2) and later reformulated by Reed et al.[[3]](#Ref.3) Following the derivation by Gingrich and Wilson [[4]](#Ref.4) and Kiss et al. later [[4]](#Ref.4), the electrostatic calculation between a mixture of Gaussian and point charge can be efficiently handled using the existing particle mesh Ewald method (*e.g.*, PPPM) for point charges. With the incorporation of the Fast Fourier Transform (FFT), a $\mathcal{O}(N\log N)$ scaling of calculation cost is given in our project.
 
-This project adds a new *pair_style* `lj/cut/point/long`, and two new *pppm* `conp/GA` and `la_conp/GA` to derive the electrostatic energy between the point and Gaussian charges, and a new *fix* `conp/GA` to derive the equilibrium electrode charge distribution, as well as the new *compute* `pe/atom_GA` to output the per-atom Coulomb energy. The validation of our project could be verification though the unit-test and it becomes fully compatible with LAMMPS (*e.g.* Supporting all `newton` and `units` options), with the following improvements and optimizations.
+This project adds a new *pair_style* `lj/cut/point/long`, and two new *pppm* `conp/ME` and `la_conp/ME` to derive the electrostatic energy between the point and Gaussian charges, and a new *fix* `conp/ME` to derive the equilibrium electrode charge distribution, as well as the new *compute* `pe/atom/ME` to output the per-atom Coulomb energy. The validation of our project could be verification though the unit-test and it becomes fully compatible with LAMMPS (*e.g.* Supporting all `newton` and `units` options), with the following improvements and optimizations.
 
 1. The preconditional conjugate gradient solver with a highly Parallel Divide-and-Conquer (DC) preconditioner generation process, *i.e.* **PCG-DC**
 2. The universal Electroneutrality constraint for both matrix and iterative approaches.
@@ -15,11 +15,11 @@ This project adds a new *pair_style* `lj/cut/point/long`, and two new *pppm* `co
 5. Feasible for a dynamics and per-atom constraint to resemble the realistic electrochemical charging and controlling process, such as constant voltage charging (CV), galvanotactic charging and even impedance spectroscopy investigation.
 6. The optimized KSPACE style to accelerate the reciprocal space calculation with the some pre-calculation for the immobilized electrode atoms.
 
-Any suggestions on the future features are welcome. Please cite our paper [[8]](#Ref.8) if using this **Conp/GA** code in your work.
+Any suggestions on the future features are welcome. Please cite our paper [[8]](#Ref.8) if using this **Conp/ME** code in your work.
 
 ![Efficient](./misc/Efficient.png)
 
-​                                          Figure: The computation efficiency for **conp/GA**
+​                                          Figure: The computation efficiency for **conp/ME**
 
 ## Dependence
 
@@ -29,16 +29,16 @@ This project is currently only compatible with LAMMPS 29Sep2021 version and late
 
 Not compatible with `atom_modify first [group]` command. Because, the atomic list in each core could be sorted to move the electrode atoms to the front.
 
-Note tat a NIL `compute pe/atom_GA` with the compute name of `__Electro_Control_GA_Compute__` is added in the background by `pair_style lj/cut/point/long` to invoke a per-atom allocate for `eatom` in `pair`.
+Note tat a NIL `compute pe/atom/ME` with the compute name of `__Electro_Control_ME_Compute__` is added in the background by `pair_style lj/cut/point/long` to invoke a per-atom allocate for `eatom` in `pair`.
 
 ## Installation
 
-1. Download **package** to [LAMMPS home directory] as *package-conp-GA*
-2. Edit **makefile** in *package-conp-GA* folder and change **LMP_MAKE** as your LAMMPS make options, *e.g.* `LMP_MAKE=intel_cpu_intelmpi`
-3. Add linear algebra library dependencies for **BLAS**, **LAPACK** or optional **SCALAPACK** into the makefile, either in the **package-conp-GA** (or in LAMMPS's original makefile). For INTEL MKL library, using the following configuration into the line of `SCALAPACK_LIB =` (or`LIB` =) as `SCALAPACK = -lmkl_intel_ilp64 -lmkl_scalapack_ilp64 -lmkl_blacs_intelmpi_ilp64 -lmkl`.
+1. Download **package** to [LAMMPS home directory] as *package-conp-ME*
+2. Edit **makefile** in *package-conp-ME* folder and change **LMP_MAKE** as your LAMMPS make options, *e.g.* `LMP_MAKE=intel_cpu_intelmpi`
+3. Add linear algebra library dependencies for **BLAS**, **LAPACK** or optional **SCALAPACK** into the makefile, either in the **package-conp-ME** (or in LAMMPS's original makefile). For INTEL MKL library, using the following configuration into the line of `SCALAPACK_LIB =` (or`LIB` =) as `SCALAPACK = -lmkl_intel_ilp64 -lmkl_scalapack_ilp64 -lmkl_blacs_intelmpi_ilp64 -lmkl`.
 4. Add the necessary compilation macro at the line `CONP_MACRO =` (or`FFT_INC =`)  or , such as, `-DCONP_NO_CONP` to compile a **RELEASE** version, otherwise a **DEBUG** version is built; `-DFFT_DOUBLE` for double accuracy FFT which decrease the level of relative error from 1e−6 to 1e−12; `-DSCALAPACK` for the **SCALAPACK** library; `-DFFT_MKL` for FFTW library from **MKL**; `-DMKL_ILP64` for the extended **ILP** interface for **MKL** and `-DINTEL_MPI` for the compilation with **Intel MPI**.
-5. Go to the folder of *package-conp-GA* and Type `make` command to compile the package that copies the code from *src_mod* into LAMMPS *src* folder and build the LAMMPS.
-6. Type `make test` command to verify the functions of the build LAMMPS.  Change the line of `LAMMPS=...` in `package-conp-GA/tests/config.ini` as the location of the compiled LAMMPS binary file.
+5. Go to the folder of *package-conp-ME* and Type `make` command to compile the package that copies the code from *src_mod* into LAMMPS *src* folder and build the LAMMPS.
+6. Type `make test` command to verify the functions of the build LAMMPS.  Change the line of `LAMMPS=...` in `package-conp-ME/tests/config.ini` as the location of the compiled LAMMPS binary file.
 
 **Otherwise**, copy all files in the `src_mod` folder to `src` and edit the`src\MAKE\OPTION\Makefile.XXX `. Then, type `make XXX` in the `src` folder. Here, **Makefile.intel_cpu_intelmpi** is also provided in `misc` folder as an example for installation configuration.
 
@@ -51,7 +51,7 @@ The new pair_style (`lj/cut/point/long`) can be invoked independently in LAMMPS 
 
 ```
 pair_style lj/cut/point/long [lj-cut] [coul-cut] point [type-ID] [α_{self}] 
-gauss [type-ID] [α] eta [type-ID] [α] [α_{self}] sv_SOL [on/off] sv_GA [on/off]
+gauss [type-ID] [α] eta [type-ID] [α] [α_{self}] sv_SOL [on/off] sv_ME [on/off]
 
 pair_style lj/cut/point/long 10 10 point 1 2.934 point 2 2.934
 pair_style lj/cut/point/long 10 10 gauss 1 2.934 eta 2 3 2.934 eta 3 1e20 2.934
@@ -72,51 +72,51 @@ For Graphene, suggest to set $\alpha_\mathrm{self}=$ 2.93295072600296 Å^-1^ at 
 
 `sv_SOL `= Keyword to control the storage of pairwise interaction between electrode and electrolyte interaction. Note that the acceleration of this keyword depends on the machine and types of simulation setup. *Default*: **off**
 
-` sv_GA [on/off] `= Keyword to control the force calculation on the electrode atoms by `sv_GA on`, otherwise `sv_GA off` the forces and (vdw) energy on the electrode atoms would be incorrect. *Default*: **off**
+` sv_ME [on/off] `= Keyword to control the force calculation on the electrode atoms by `sv_ME on`, otherwise  with `sv_ME off` the forces and (vdw) energy on the electrode atoms would be incorrect. *Default*: **off**
 
-**[Default]**: `sv_SOL off` and  `sv_GA off`
+**[Default]**: `sv_SOL off` and  `sv_ME off`
 
-## Syntax: pppm_conp/GA & pppm_la_conp/GA
+## Syntax: pppm_conp/ME & pppm_la_conp/ME
 
 ```
-kspace_style 	pppm_conp/GA [accuracy] | sv_SOL [on/off] fixed [on/off]
-kspace_style 	pppm_la_conp/GA [accuracy] | sv_SOL [on/off] fixed [on/off] sv_Xuv [on/off]
+kspace_style 	pppm_conp/ME [accuracy] | sv_SOL [on/off] fixed [on/off]
+kspace_style 	pppm_la_conp/ME [accuracy] | sv_SOL [on/off] fixed [on/off] sv_Xuv [on/off]
 
 kspace_style 	ewald 1e-4
 kspace_style 	pppm 1e-4
-kspace_style 	pppm_conp/GA 1e-4 sv_SOL on fixed on
-kspace_style 	pppm_la_conp/GA 1e-4 sv_SOL on fixed on su_Xuv off
+kspace_style 	pppm_conp/ME 1e-4 sv_SOL on fixed on
+kspace_style 	pppm_la_conp/ME 1e-4 sv_SOL on fixed on su_Xuv off
 ```
 
 `sv_SOL [on/off]` = Keyword to control whether the charges on the mesh grid from the solvent molecule is pre-stored in every MD step. *Default*: **off**
 
 `fixed [on/off]` = Keyword to prevent the re-optimization of the P3M parameter between the successive `run`  invoking. The re-optimization of P3M parameters changes the structure of $\mathbf{E}$ and enlarges the error in the matrix inversion solver. *Default*: **on**
 
-`sv_Xuv[on/off]` = Keyword to apply the intermediate FFT matrix $X_{\mu\nu}$ for the electrode potential calculation (only available in `pppm_la_conp/GA`). *Default*: **off**
+`sv_Xuv[on/off]` = Keyword to apply the intermediate FFT matrix $X_{\mu\nu}$ for the electrode potential calculation (only available in `pppm_la_conp/ME`). *Default*: **off**
 
-Although the **conp/GA** package is feasible with all existing LAMMPS KSPACE solver, our **pppm_conp/GA**  code is specifically optimized for the immobilized electrode atoms. **pppm_la_conp/GA** is added to implement the intermediate matrix approach [[6]](#Ref.6) for $\mathbf{E}$ and electrode potential calculation. 
+Although the **conp/ME** package is feasible with all existing LAMMPS KSPACE solver, our **pppm_conp/ME**  code is specifically optimized for the immobilized electrode atoms. **pppm_la_conp/ME** is added to implement the intermediate matrix approach [[6]](#Ref.6) for $\mathbf{E}$ and electrode potential calculation. 
 
 **[Default]**: `sv_SOL off`, `fixed on` and `sv_Xuv off`.
 
-## Syntax: compute pe/atom_GA
+## Syntax: compute pe/atom/ME
 
 ```
-compute 	[compute-name] [group-name] pe/atom_GA coul kspace
+compute 	[compute-name] [group-name] pe/atom/ME coul kspace
 ```
 
 The new compute style to calculate the per-atom energy of the real space (`coul`) or the energy from the reciprocal space (`kspace`) and other per-atom energy. `coul` is only compatible with the using of`lj/cut/point/long`
 
-## Syntax: Fix conp/GA
+## Syntax: Fix conp/ME
 
 ```
-fix			[fix-name] [group-name] conp/GA [Nevery] [solver] metal [type-ID] [U] charge [type-ID] [Q] | neutrality [on/off] units [lmp/eV] Vext_update [on/off] pair [on/off] first [on/off] Uchem_extract [on/off] [Options...]
+fix			[fix-name] [group-name] conp/ME [Nevery] [solver] metal [type-ID] [U] charge [type-ID] [Q] | neutrality [on/off] units [lmp/eV] Vext_update [on/off] pair [on/off] first [on/off] Uchem_extract [on/off] [Options...]
 
-fix			conp ele conp/GA 1 inv metal  1 1.0      metal  2 -1.0
-fix 		conp ele conp/GA 1 cg  metal  2 ${lPot}  metal  3 v_rPot metal 4 v_z
-fix 		conp ele conp/GA 1 pcg charge 3 -0.5     charge 4 v_Q
+fix			conp ele conp/ME 1 inv metal  1 1.0      metal  2 -1.0
+fix 		conp ele conp/ME 1 cg  metal  2 ${lPot}  metal  3 v_rPot metal 4 v_z
+fix 		conp ele conp/ME 1 pcg charge 3 -0.5     charge 4 v_Q
 ```
 
-`[fix-name]` = Tag of `conp/GA` fix
+`[fix-name]` = Tag of `conp/ME` fix
 
 `[group-name]` = Group name for all electrode atoms. Note that the fix group must contain all electrode atoms involved in the following `metal` and `charge` options
 
@@ -143,7 +143,7 @@ Note that there is no limitation on the number of the electrodes, *i.e.* the num
 ```
 Keywords:       pair  [on/off]        first  [on/off]      selfGG  [on/off]  
 
-fix				conp ele conp/GA 1 inv metal  1 1.0  metal  2 -1.0 pair on selfGG on first on
+fix				conp ele conp/ME 1 inv metal  1 1.0  metal  2 -1.0 pair on selfGG on first on
 ```
 
 `pair [on/off]` = Switch to accelerate the calculation of the real space interaction between the electrode atoms, using a pre-calculated sparse matrix. *Default:* **on**
@@ -152,7 +152,7 @@ fix				conp ele conp/GA 1 inv metal  1 1.0  metal  2 -1.0 pair on selfGG on firs
 
 `selfGG [on/off]` = Whether or not the interaction between the electrode atoms is included in the CPM equation. With `on` option, the relative change of the electrode charge between the successive MD step is calculated as $\mathbf{Eq}=\mathbf{b}^\mathrm{sol}+\mathbf{b}^\mathrm{ele}$.  Otherwise (`off` option),  $\mathbf{q}$ is given as $\mathbf{E}\Delta\mathbf{q}=\mathbf{b}^\mathrm{sol}$. *Default*: **off**
 
-Note that `pair on` option would considerably accelerate the simulation. While `first on` may slightly improve the performance, as well as `selfGG off`. The later switch skips part of the calculation between the electrode atoms, but it is only compatible with `pppm conp/GA` or `pppm la_conp/GA`
+Note that `pair on` option would considerably accelerate the simulation. While `first on` may slightly improve the performance, as well as `selfGG off`. The later switch skips part of the calculation between the electrode atoms, but it is only compatible with `pppm conp/ME` or `pppm la_conp/ME`
 
 **[Default]**: `pair on`, `first on`, `selfGG off`
 
@@ -165,8 +165,8 @@ Keywords:   matrix [mat-name].[txtmat/binmat] [mat-op: save/load/auto/none]
             scalapack [scalapack-num] SCALAPACK_BSize [BSize-num]
             Smat [on/off]
 
-fix			conp ele conp/GA 1 inv metal 1 1.0 matrix mat0.txtmat save
-fix			conp ele conp/GA 1 inv metal 1 1.0 metal 2 -1.0 matrix mat.binmat auto
+fix			conp ele conp/ME 1 inv metal 1 1.0 matrix mat0.txtmat save
+fix			conp ele conp/ME 1 inv metal 1 1.0 metal 2 -1.0 matrix mat.binmat auto
 ```
 
 The matrix inversion solver (**INV**) is proposed to calculate the equilibrium electrode charges, using $\mathbf{q}=\mathbf{E}^{-1}\mathbf{b}$. Whereas, the calculation of $\mathbf{E}$ is controlled by `matrix` option
@@ -188,8 +188,8 @@ The matrix inversion solver (**INV**) is proposed to calculate the equilibrium e
 ```
 Keywords:   tol [tol-value]   max [maxloop]   tol_style [rel_B/max_Q/rel_Q]
 
-fix			conp ele conp/GA 1 cg metal 1 1.0 tol 1e-6 max 100 tol_style rel_B
-fix			conp ele conp/GA 1 cg charge 1 0.5 tol 1e-6 max 200 tol_style rel_Q
+fix			conp ele conp/ME 1 cg metal 1 1.0 tol 1e-6 max 100 tol_style rel_B
+fix			conp ele conp/ME 1 cg charge 1 0.5 tol 1e-6 max 200 tol_style rel_Q
 ```
 
 To solve the CPM problem using the conjugate gradient method (CG).
@@ -211,8 +211,8 @@ Note that all the keywords for **cg** solver is also applied for the following P
 ```
 Keywords:  	pcg_mat [full/normal/DC...] pcg_atoms [pcg_atoms-value] pshift_scale [shift-value]
 
-fix			conp ele conp/GA 1 pcg tol 1e-8 max 100 metal 1 1.0 pcg_mat full pshift_scale  1.0
-fix			conp ele conp/GA 1 pcg tol 1e-8 charge 1 0.5 pcg_mat DC 0.079 1e-6
+fix			conp ele conp/ME 1 pcg tol 1e-8 max 100 metal 1 1.0 pcg_mat full pshift_scale  1.0
+fix			conp ele conp/ME 1 pcg tol 1e-8 charge 1 0.5 pcg_mat DC 0.079 1e-6
 ```
 
 `pcg_mat [full/normal/DC...]` = Methods to generate preconditional matrix $\mathbf{P}$. *Default:* **normal**
@@ -236,7 +236,7 @@ Generally speaking, the efficiencies of PCG-Normal or PCG-Full methods are about
 ```
 Keywords:  	ppcg_cut [p-cut] ppcg_block [block-num]
 
-fix			conp ele conp/GA 1 ppcg metal 1 1.0 ppcg_block 4 ppcg_cut 0.06
+fix			conp ele conp/ME 1 ppcg metal 1 1.0 ppcg_block 4 ppcg_cut 0.06
 ```
 
 `ppcg` solver generates $\mathbf{P}$ from the calculated $\mathbf{E}$ with the extra compensation on the removed element. Note that the $\mathbf{E}^{-1}$ matrix is firstly sparsified by the elements' value, only the entries with the value larger than `[p-cut]` is reserved. 
@@ -258,24 +258,24 @@ To optimize the efficiency of PPCG, the value of `[p-cut]` should be adjusted to
 ```
 Keywords:  	debug [debug_level] check [on/off] check_first [first-step] [check-tol]
 
-fix			conp ele conp/GA 1 ppcg metal 1 1.0 debug 0 check on check_first 3 1e-12
+fix			conp ele conp/ME 1 ppcg metal 1 1.0 debug 0 check on check_first 3 1e-12
 ```
 
 `debug` = Keyword allows to print debug information at `[debug_level]`$\neq0$. *Default*: **0**
 
 `check [on\off]` = Keyword allows to check the accuracy of CPM solution. At `[on]` option, the potential is rechecked at every `[Nevery]` timestep.
 
-`check_first [first-step] [check-tol]`= Keyword controls the potential check. After `[first-step]`th timestep, the simulation may stop with the error larger than the failure criterion of `[check-tol]`. For example, `check on check_first 3 1e-12` would check the result after 3rd MD timestep. Once the relative error of the electric potential on **any** electrode atom is larger than 1e−12, the simulation would stop with failure information. For a new system, we always suggested the user to check their script and their LAMMPS compilation with this keyword for ~1000 MD steps. *Default*: **5 1e−8**.
+`check_first [first-step] [check-tol]`= Keyword controls the potential check. After `[first-step]`th timestep, the simulation may stop with the error larger than the failure criterion of `[check-tol]`. For example, `check on check_first 3 1e-12` would check the result after 3rd MD timestep. Once the relative error of the electric potential on **any** electrode atom is larger than 1e−12, the simulation would stop with failure information. For a new system, we always suggested the user to check their script and their LAMMPS compilation with this keyword for ~1000 MD steps. *Default*: **5  1e−8**.
 
 #### MISC
 
-`Xi_index [GA-index]` = `[GA-index]`th electrode atom is select to calculate the Ewald potential of the simulation cell at origin point, *i.e.* the value of $\psi(\mathbf{0})$ or the Madelung constant of the cell. In `Smat on` model, the electrode atom is selected to derive the chemical potential shift $\mu_c$ by the electroneutrality constraint. *Default*: **0**
+`Xi_index [ME-index]` = `[ME-index]`th electrode atom is select to calculate the Ewald potential of the simulation cell at origin point, *i.e.* the value of $\psi(\mathbf{0})$ or the Madelung constant of the cell. In `Smat on` model, the electrode atom is selected to derive the chemical potential shift $\mu_c$ by the electroneutrality constraint. *Default*: **0**
 
 `delta_cut [d-cut]`= Keyword decreases the Coulomb cutoff during the $\mathbf{P}$ calculation in PCG-Normal. *Default*: **0.0**
 
-`DEBUG_GAtoGA [on/off]` = Keyword to debug the internal electrode-electrode interaction. *Default*: **on**
+`DEBUG_MEtoME [on/off]` = Keyword to debug the internal electrode-electrode interaction. *Default*: **on**
 
-`DEBUG_SOLtoGA [on/off]` = Keyword to debug the internal electrolyte-electrode interaction. *Default*: **on**
+`DEBUG_SOLtoME [on/off]` = Keyword to debug the internal electrolyte-electrode interaction. *Default*: **on**
 
 `symmetry [on/off/sqrt/tran]` = Make $\mathbf{E}^{-1}$ matrix symmetric by different methods. *Default*: **none**
 
@@ -285,9 +285,9 @@ fix			conp ele conp/GA 1 ppcg metal 1 1.0 debug 0 check on check_first 3 1e-12
 
 `printf_me [work-proc]` = Keyword controls the `[work-proc]`th processor to output the convergent information during the (P)CG approaches. Default: **-1**
 
-`INFO [on/off]` = Keyword allows to print comprehensive configuration information for **Conp/GA fix**. *Default*: **off**
+`INFO [on/off]` = Keyword allows to print comprehensive configuration information for **Conp/ME**. *Default*: **off**
 
-![](./Fix_conp_Keywords.png)
+![](./misc/Fix_conp_Keywords.png)
 
 
 
@@ -320,4 +320,4 @@ fix			conp ele conp/GA 1 ppcg metal 1 1.0 debug 0 check on check_first 3 1e-12
 
 <span id="Ref.7">[7]</span> Scalfi, Laura, et al., *Phys. Chem. Chem. Phys.* **22**, 10480 (2020). https://doi.org/10.1039/C9CP06285H
 
-<span id="Ref.8">[8]</span>H.Y. Li, G.P. Jiang, et al., *arXiv:2111.06704* (2021) https://arxiv.org/ab/2111.06704
+<span id="Ref.8">[8]</span>H.Y. Li, P.Y. Wang, et al., *arXiv:2111.06704* (2022) https://arxiv.org/ab/2111.06704

@@ -142,12 +142,12 @@ set 			  group GA_hi charge -$(v_qS*v_GA_qi)
 set 			  group GA_lo charge  $(v_qS*v_GA_qi)
 set 			  group GA_hi charge -$(v_qS*v_GA_qi)
 
-fix				conp SLG conp/GA ${conp_run} ${cg_style} metal 1 -${U_cap} metal 2 ${U_cap} tol 1e-16 tol_style ${tol_style} max 100 printf_me -1 matrix a.binmat auto symmetry off neutrality ${neutral} pair ${pair} units eV first ${first} check_first ${tol_first} ${tol} check on debug 0 selfGG ${selfGG} pcg_mat ${pcg_mat} ${fixExtra}
+fix				conp SLG conp/ME ${conp_run} ${cg_style} metal 1 -${U_cap} metal 2 ${U_cap} tol 1e-16 tol_style ${tol_style} max 100 printf_me -1 matrix a.binmat auto symmetry off neutrality ${neutral} pair ${pair} units eV first ${first} check_first ${tol_first} ${tol} check on debug 0 selfGG ${selfGG} pcg_mat ${pcg_mat} ${fixExtra}
 thermo_style      custom v_FFF c_avesq_z c_avesq_pe c_avesq_fz c_q0 c_q1 c_ions_q2 c_GAlo_q2 c_GAhi_q2 f_conp v_prun 
 thermo_modify 		format line "%.0f %g %g %g %g %g %g %g %g %g %g %d" 
 thermo 			  1 # ${runs}
 fix 			  2 ions move variable v_dx v_dy v_dz NULL NULL NULL units box
 run				  ${multi_run}
 unfix             conp
-fix			      conp SLG conp/GA ${conp_run} ${cg_style} metal 1 -${U_cap} metal 2 ${U_cap} tol 1e-16 tol_style ${tol_style} max 100 printf_me -1 matrix a.binmat auto symmetry off neutrality ${neutral} pair ${pair} units eV first ${first} check_first ${tol_first} ${tol} check on debug 0 selfGG ${selfGG} pcg_mat ${pcg_mat} ${fixExtra}
+fix			      conp SLG conp/ME ${conp_run} ${cg_style} metal 1 -${U_cap} metal 2 ${U_cap} tol 1e-16 tol_style ${tol_style} max 100 printf_me -1 matrix a.binmat auto symmetry off neutrality ${neutral} pair ${pair} units eV first ${first} check_first ${tol_first} ${tol} check on debug 0 selfGG ${selfGG} pcg_mat ${pcg_mat} ${fixExtra}
 run				  ${multi_run}

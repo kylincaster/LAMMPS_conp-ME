@@ -27,7 +27,7 @@ of Ewald summation or PPPM in Lammps
 #include "func_macro.h"
 
 #include "electro_control_GA.h"
-#include "fix_conp_GA.h"
+#include "fix_conp_ME.h"
 #include "pair_lj_cut_point_long.h"
 
 #include "atom.h"
@@ -82,7 +82,7 @@ PairLJCutPointLong::PairLJCutPointLong(LAMMPS* lmp) : Pair(lmp)
   pair_dxyz         = nullptr;
   me                = comm->me;
 
-  char* compute_str[4] = {"__Electro_Control_GA_Compute__", "all", "pe/atom_GA", "__NIL_COMPUTER__"};
+  char* compute_str[4] = {"__Electro_Control_ME_Compute__", "all", "pe/atom/ME", "__NIL_COMPUTER__"};
   modify->add_compute(4, compute_str, 0);
   compute_id = modify->ncompute - 1;
 }
@@ -272,7 +272,7 @@ void PairLJCutPointLong::settings(int narg, char** arg)
       } else
         error->all(FLERR, "Illegal pair_lj_cut_point_long argument for self option");
       iarg += 2;
-    } else if (strcmp(arg[iarg], "sv_GA") == 0) {
+    } else if (strcmp(arg[iarg], "sv_ME") == 0) {
       if (iarg + 2 > narg) error->all(FLERR, "Illegal pair_lj_cut_point_long argument for sv_GA option");
       if (strcmp(arg[iarg + 1], "on") == 0) {
         sv_GA_flag = true;

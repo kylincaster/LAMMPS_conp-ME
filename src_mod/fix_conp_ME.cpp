@@ -55,7 +55,7 @@ energy
   Double check the following two run to make use of the same kspace calculation.
 
 ------------------------------------------------------------------------- */
-#include "fix_conp_GA.h"
+#include "fix_conp_ME.h"
 
 #include "atom.h"
 #include "comm.h"
@@ -102,7 +102,7 @@ using namespace MathConst;
 enum { REV_Q, REV_COUL, REV_COUL_RM, REV_FORCE };
 
 // #define INTEL_MPI
-#define FIX_CONPGA_VERSION 1.69
+#define FIX_CONPGA_VERSION 1.71
 #define xstr(s) str(s)
 #define str(s) #s
 
@@ -279,12 +279,15 @@ FixConpGA::FixConpGA(LAMMPS* lmp, int narg, char** arg) : Fix(lmp, narg, arg)
   max_lwork                 = std::numeric_limits<MKL_INT>::max();
   inv_qe2f                  = 1;
 
+  Uchem_sum = Uchem_sqr = UQ_corr = 0.0;
   Uchem = Ushift     = 0.0;
   update_Q_totaltime = update_Q_time = 0.0;
   update_K_totaltime = update_K_time = 0.0;
   update_P_totaltime = update_P_time = 0.0;
-  me                                 = comm->me;
-  nprocs                             = comm->nprocs;
+
+  temp      = 300.0;
+  me        = comm->me;
+  nprocs    = comm->nprocs;
   pcg_shift = pcg_shift_scale = ppcg_invAAA_cut = 0;
   env_alpha_stepsize                            = 0;
   P_PPCG = q_iters  = nullptr;
@@ -583,7 +586,7 @@ iseq:
         error->all(FLERR, "Illegal fix conp/GA command for check option, the "
                           "available options are on or off");
       iarg += 2;
-    } else if (strcmp(arg[iarg], "DEBUG_GAtoGA") == 0) {
+    } else if (strcmp(arg[iarg], "DEBUG_MEtoME") == 0) { // DEBUG_GAtoGA
       if (iarg + 2 > narg) error->all(FLERR, "Illegal fix conp/GA command for check option");
       if (strcmp(arg[iarg + 1], "on") == 0 || strcmp(arg[iarg + 1], "1") == 0) {
         DEBUG_GAtoGA = true;
@@ -593,7 +596,7 @@ iseq:
         error->all(FLERR, "Illegal fix conp/GA command for DEBUG_GAtoGA "
                           "option, the available options are on or off");
       iarg += 2;
-    } else if (strcmp(arg[iarg], "DEBUG_SOLtoGA") == 0) {
+    } else if (strcmp(arg[iarg], "DEBUG_SOLtoME") == 0) { // DEBUG_SOLtoGA
       if (iarg + 2 > narg) error->all(FLERR, "Illegal fix conp/GA command for check option");
       if (strcmp(arg[iarg + 1], "on") == 0 || strcmp(arg[iarg + 1], "1") == 0) {
         DEBUG_SOLtoGA = true;
@@ -1194,10 +1197,14 @@ int FixConpGA::setmask()
   return mask;
 }
 
-/* ---------------------------------------------------------------------- */
+/* ------------------ Output the thermal information for capacitance --------------- */
 void FixConpGA::post_run()
 {
-  double inv_Ele_iter = 1.0 / Ele_iter;
+  double inv_Ele_iter  = 1.0 / Ele_iter;
+  double GA_Vext_To_Ev = 1;
+  if (unit_flag != 1) {
+    GA_Vext_To_Ev = inv_qe2f;
+  }
   // double double_qe2f  = 2 * force->qe2f;
   if (me == 0) {
     switch (Ele_Cell_Model) {
@@ -1205,12 +1212,17 @@ void FixConpGA::post_run()
         if (update_Vext_flag) break;
         // XXXX
         utils::logmesg(lmp, "\n---------- [Conp] Electrode charge fluctuation for {} MD invoking ---------------\n", Ele_iter);
+        if (neutrality_flag) {
+          Uchem     = Uchem_sum * inv_Ele_iter;
+          Uchem_sqr = sqrt(Uchem_sqr * inv_Ele_iter - Uchem * Uchem);
+          Uchem_sqr *= inv_qe2f * 2;
+          utils::logmesg(lmp, "<Uchem> = {:.12f} V; std{{Uchem}} = {:.12f} V\n", Uchem * inv_qe2f * 2, Uchem_sqr);
+        }
         for (int i = 0; i < Ele_num; i++) {
-          printf("%d, %.10g, %.10g", i, Ele_qave[i], Ele_qsq[i]);
           int iType    = Ele_To_aType[i];
           double q_ave = Ele_qave[i] * inv_Ele_iter;
           double q_std = sqrt(Ele_qsq[i] * inv_Ele_iter - q_ave * q_ave);
-          double U     = GA_Vext_var[iType] - Uchem * inv_qe2f; // GA  - Uchem
+          double U     = GA_Vext_var[iType] * GA_Vext_To_Ev + Uchem * inv_qe2f * 2; // GA  - Uchem
           utils::logmesg(lmp, "[Ele{:2d}] <Q> = {:.12f}; std{{Q}} = {:.12f} @ Pot {:.6f} V\n", i + 1, q_ave, q_std, U);
         }
         utils::logmesg(lmp, "\n");
@@ -1219,6 +1231,31 @@ void FixConpGA::post_run()
           double q_std = sqrt(Ele_qsq[i] * inv_Ele_iter - q_ave * q_ave) / Ele_GAnum[i];
           q_ave /= Ele_GAnum[i];
           utils::logmesg(lmp, "[Ele{:2d}] <q_i> = {:.12f}; std{{q_i}} = {:.12f}; Ele. Atom = {}\n", i + 1, q_ave, q_std, Ele_GAnum[i]);
+        }
+        // calculate the differential capacitance
+        if (Ele_num == 2) {
+          utils::logmesg(lmp, "\n ------ Differential Capacitance for TWO electrodes ------ \n");
+          double q_ave     = Ele_qave[0] * inv_Ele_iter;
+          double q_sqr     = Ele_qsq[0] * inv_Ele_iter;
+          double kBT       = force->boltz * inv_qe2f * temp;
+          double Cdiff     = (q_sqr - q_ave * q_ave) / kBT;
+          double half_qe2f = 0.5 * force->qe2f;
+          utils::logmesg(lmp, "Cdff_s  = {:.12f} Cvac = {:.12f} [e/V]\n", Cdiff, Cap_vacc * half_qe2f);
+          utils::logmesg(lmp, "Cdff[1] = {:.12f} [e/V]; Ele. Atom = {}\n", Cdiff / Ele_GAnum[0], Ele_GAnum[0]);
+          utils::logmesg(lmp, "Cdff[2] = {:.12f} [e/V]; Ele. Atom = {}\n", Cdiff / Ele_GAnum[1], Ele_GAnum[1]);
+          utils::logmesg(lmp, "    Thermal votlage: {:.12f} eV @ {:.4f} K\n", kBT, temp);
+
+          double dUchem_dPhi0 = (Uchem_sqr - Uchem * q_ave) / kBT;
+          int i0              = Ele_To_aType[0];
+          int i1              = Ele_To_aType[1];
+          double Phi0         = fabs(GA_Vext_var[i0] - GA_Vext_var[i1]) * GA_Vext_To_Ev;
+          double Phi_P        = Phi0 * (Ele_matrix_IC[1][1] + Ele_matrix_IC[0][1]) * inv_AAA_sumsum;
+          double Phi_N        = Phi0 * (Ele_matrix_IC[0][0] + Ele_matrix_IC[1][0]) * inv_AAA_sumsum;
+          if (GA_Vext_var[i0] < GA_Vext_var[i1]) std::swap(Phi_P, Phi_N);
+          utils::logmesg(lmp, "    Phi0   = {:.12f} [V]\n", Phi0);
+          utils::logmesg(lmp, "    Phi[0] = {:.12f} [V]\n", Phi_P);
+          utils::logmesg(lmp, "    Phi[1] = {:.12f} [V]\n", -Phi_N);
+          utils::logmesg(lmp, "    <Uchem*Q>-<Uchem><Q> = {:.12f} [kbT]\n", dUchem_dPhi0);
         }
         utils::logmesg(lmp, "-------------End [Conp] Electrode charge fluctuation -------------\n\n");
         break;
@@ -1475,6 +1512,7 @@ void FixConpGA::force_analysis(int eflag, int vflag)
   electro->qsum_qsq();
 }
 
+/* Only for the S-matrix scheme */
 void FixConpGA::calc_Uchem_with_zero_Q_sol()
 {
   int iproc, n = atom->ntypes;
@@ -1496,6 +1534,9 @@ void FixConpGA::calc_Uchem_with_zero_Q_sol()
   }
   MPI_Bcast(&Ushift, 1, MPI_DOUBLE, iproc, world);
   Uchem += Ushift;
+  Uchem_sum += Uchem;
+  Uchem_sqr += Uchem * Uchem;
+  UQ_corr += Uchem * Ele_qsum[0];
 
   // printf("Uchem = %.12f, Ushfit = %f, ecoul = %.12f[%.10f,%.10f], q = %.12f\n", Uchem, Ushift, ecoul, cl_atom[iseq], kspace_eatom[iseq], q[iseq]);
   for (i = 0; i < localGA_num; i++) {
@@ -2002,7 +2043,7 @@ void FixConpGA::setup(int vflag)
     if (__env_alpha_flag) calc_env_alpha();
   }
 
-  Uchem = 0;
+  Uchem = Uchem_sum = Uchem_sqr = 0;
   setup_Vext();
   // if (setup_run == 0)
   update_Vext();
@@ -2204,6 +2245,8 @@ void FixConpGA::setup(int vflag)
       if (me == 0) utils::logmesg(lmp, "[ConpGA] calculate without force clear!\n");
     }
   }
+
+  Uchem_sum = Uchem_sqr = 0;
   neighbor->ago++;
   pre_force(1);
   neighbor->ago--;
@@ -2592,21 +2635,25 @@ void FixConpGA::make_ELE_matrix()
   double half_qe2f   = 0.5 * force->qe2f;
   double half_qe2f_i = 1 / half_qe2f;
   if (me == 0) {
-    utils::logmesg(lmp, "  Inv_Ele_matrix =   [units e/V]\n");
+    utils::logmesg(lmp, "  Capactance Coeff. Matrix =   [units e/V]\n");
     for (int i = 0; i < Ele_num; i++) {
+      double C_sum = 0;
       utils::logmesg(lmp, "    ");
       for (int j = 0; j < Ele_num; j++) {
         utils::logmesg(lmp, " {:16.12g}", Ele_matrix_IC[i][j] * half_qe2f);
+        C_sum += Ele_matrix_IC[i][j];
       }
-      utils::logmesg(lmp, "\n");
+      utils::logmesg(lmp, "   Sum:{:16.12g}\n", C_sum * half_qe2f);
     }
-    utils::logmesg(lmp, "  Ele_matrix =   [units V/e]\n");
+    utils::logmesg(lmp, "  Elastance  Coeff. Matrix =   [units V/e]\n");
     for (int i = 0; i < Ele_num; i++) {
+      double C_sum = 0;
       utils::logmesg(lmp, "    ");
       for (int j = 0; j < Ele_num; j++) {
         utils::logmesg(lmp, " {:16.12g}", Ele_matrix[i][j] * half_qe2f_i);
+        C_sum += Ele_matrix[i][j];
       }
-      utils::logmesg(lmp, "\n");
+      utils::logmesg(lmp, " Sum: {:16.12g}\n", C_sum * half_qe2f_i);
     }
   }
 
@@ -2625,10 +2672,13 @@ void FixConpGA::make_ELE_matrix()
   // For standard Two-electrode setup
   if (Ele_num == 2) {
     double Ele_matrix_IC_det = Ele_matrix_IC[0][0] * Ele_matrix_IC[1][1] - Ele_matrix_IC[0][1] * Ele_matrix_IC[1][0];
-    double capacitance       = Ele_matrix_IC_det / total_sum;
+    Cap_vacc                 = Ele_matrix_IC_det / total_sum;
     if (me == 0) {
       // const double q_const = 1.60217646E-19;
-      utils::logmesg(lmp, "[Conp] Vaccuum Capacitance = {:16.12g} [e/V]\n", capacitance * half_qe2f);
+      utils::logmesg(lmp, "[Conp] Vaccuum Capacitance = {:16.12g} [e/V]\n", Cap_vacc * half_qe2f);
+      if (Cap_vacc < 0) {
+        error->warning(FLERR, "Negative Vaccuum capacitance with an invalid atomic Hubbard value!");
+      }
     }
   }
 }
@@ -7218,7 +7268,11 @@ double FixConpGA::POST2ND_localGA_neutrality(double qsum_totalGA, double* q)
   const int* const GA_seq_arr = &localGA_seq.front();
   // rintf("qsum_totalGA = %.12g\n", qsum_totalGA);
 
-  if (fabs(qsum_totalGA) < 1e-15) {
+  if (fabs(qsum_totalGA) < 5e-14) {
+    Uchem_sum += Uchem;
+    Uchem_sqr += Uchem * Uchem;
+    UQ_corr += Uchem * Ele_qsum[0];
+
     // if (me == 0) utils::logmesg(lmp, "Reach the criteria without new
     // charge neutrality treatment\n");
     return 0;
@@ -7239,7 +7293,9 @@ double FixConpGA::POST2ND_localGA_neutrality(double qsum_totalGA, double* q)
   }
 
   Uchem -= Ushift;
-
+  Uchem_sum += Uchem;
+  Uchem_sqr += Uchem * Uchem;
+  // printf("Uchem = %.12f, Uchem_sum = %.12f; %.12f\n", Uchem, Uchem_sum, Uchem_sqr);
   /*
   if (me == 0) {
     if (unit_flag == 1) {
@@ -7256,6 +7312,7 @@ double FixConpGA::POST2ND_localGA_neutrality(double qsum_totalGA, double* q)
     for (int i = 0; i < Ele_num; i++) {
       Ele_qsum[i] -= qsum_totalGA * Ele_vect[i];
     }
+    UQ_corr += Uchem * Ele_qsum[0];
   }
 
   neutrality_state = false; // TODO to make it true;
@@ -7557,7 +7614,7 @@ void FixConpGA::meanSum_AAA_cg()
     }
   }
   MPI_Allreduce(&AAA_sumsum_local, &AAA_sumsum, 1, MPI_DOUBLE, MPI_SUM, world);
-  if (me == 0) utils::logmesg(lmp, "[ConpGA] inv_AAA_sumsum = {:20.16f} from iteration methods\n", 1 / AAA_sumsum);
+  if (me == 0) utils::logmesg(lmp, "[ConpGA] inv_AAA_sumsum = {:20.16f} from iteration methods\n", 0.5 * force->qe2f / AAA_sumsum);
 
   inv_AAA_sumsum = 1 / AAA_sumsum;
   for (size_t i = 0; i < localGA_num; i++) {
@@ -7606,7 +7663,11 @@ void FixConpGA::meanSum_AAA()
       AAA_sum1D[i] *= inv_AAA_sumsum;
     }
   }
-  if (me == 0) utils::logmesg(lmp, "[ConpGA] inv_AAA_sumsum = {:.16f} from inverse method\n", inv_AAA_sumsum);
+  if (me == 0) {
+    double half_qe2f = 0.5 * force->qe2f;
+    utils::logmesg(lmp, "[ConpGA] C_{{\\Sigma}}        = {:.16f} [e/V] from inverse method\n", half_qe2f * AAA_sumsum);
+    utils::logmesg(lmp, "[ConpGA] C_{{\\Sigma}}^{{-1}} = {:.16f} [V/e] from inverse method\n", inv_AAA_sumsum / half_qe2f);
+  }
 }
 
 /* -------------------------------------------------------------------
@@ -9245,9 +9306,9 @@ void FixConpGA::fix_reverse_comm(int pflag)
 double FixConpGA::compute_scalar()
 {
   if (unit_flag == 1)
-    return Uchem * inv_qe2f;
+    return Uchem * inv_qe2f * 2;
   else
-    return Uchem;
+    return Uchem * 2;
 }
 
 double FixConpGA::compute_vector(int n)

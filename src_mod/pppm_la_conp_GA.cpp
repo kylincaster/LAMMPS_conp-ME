@@ -16,7 +16,7 @@
 #include "domain.h"
 #include "error.h"
 #include "fft3d_wrap.h"
-#include "fix_conp_GA.h"
+#include "fix_conp_ME.h"
 #include "force.h"
 #include "gridcomm.h"
 #include "math_const.h"

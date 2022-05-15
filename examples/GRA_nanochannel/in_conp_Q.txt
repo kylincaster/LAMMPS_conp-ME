@@ -82,7 +82,7 @@ pair_coeff    6  6    0.15131351          3.062909793
 ###+++++++++++++++++++++++++++End of Force Field Setup+++++++++++++++++++++++++++####
 
 #space_style    pppm/cg  1e-4 1e-6
-kspace_style 	pppm_conp/GA 1e-4 sv_SOL on fixed on
+kspace_style 	pppm_conp/ME 1e-4 sv_SOL on fixed on
 #kspace_modify   diff ad
 
 neighbor        2.0 bin
@@ -141,7 +141,7 @@ compute		Q1 GA1 reduce ave c_Q
 compute		Q2 GA2 reduce ave c_Q
 compute		Qsum all reduce sum c_Q
 
-compute		coul ele pe/atom_GA coul kspace
+compute		coul ele pe/atom/ME coul kspace
 variable	epot atom c_coul/q
 fix			conp all null_print
 
@@ -161,7 +161,7 @@ fix             9 flow temp/berendsen 298.0 298.0 100
 fix_modify      9 temp flow_comtemp
 run				$(50*v_time_scale)
 unfix			conp
-fix                           conp ele conp/GA 1 inv charged 1 v_GA_Q charged 2 -${GA_Q} pair on tol_style rel_B check_first 10000 0.01 selfGG off first on neutrality on matrix ./a.binmat none debug 0
+fix                           conp ele conp/ME 1 inv charged 1 v_GA_Q charged 2 -${GA_Q} pair on tol_style rel_B check_first 10000 0.01 selfGG off first on neutrality on matrix ./a.binmat none debug 0
 run				$(50*v_time_scale)
 unfix 		  	9
 #ndump			1

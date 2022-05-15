@@ -47,7 +47,7 @@ class TestPair:
         assert int(run.config["CORE_NUM"]) > 0
 
     @pytest.mark.parametrize(
-        "Kstyle", ['"pppm_la_conp/GA 1e-4"', '"pppm_la_conp/GA 1e-4"']
+        "Kstyle", ['"pppm_la_conp/ME 1e-4"', '"pppm_la_conp/ME 1e-4"']
     )
     def test_pppm(self, Kstyle):
         config = config_orig.copy()

@@ -12,7 +12,7 @@ config_save = {
     "pair": "on",
     "newton": "on",
     "first": "on",
-    "kspace": '"pppm_conp/GA 1e-4"',
+    "kspace": '"pppm_conp/ME 1e-4"',
     "selfGG": "on",
     "cg_style": "pcg",
     "tol_style": "rel_B",
@@ -38,8 +38,8 @@ class TestSaveCG:
         config["cg"] = "cg"
         config["newton"] = newton
         config["selfGG"] = selfGG
-        config["kspace"] = '"pppm_conp/GA 1e-4 sv_SOL on"'
-        config["pair_extra"] = '"sv_SOL on sv_GA on"'
+        config["kspace"] = '"pppm_conp/ME 1e-4 sv_SOL on"'
+        config["pair_extra"] = '"sv_SOL on sv_ME on"'
         result = run.run(config, 13)
         assert np.all(result[0] == result[12])
 
@@ -52,7 +52,7 @@ class TestSavePCG:
         config["cg"] = "pcg"
         config["newton"] = newton
         config["selfGG"] = selfGG
-        config["kspace"] = '"pppm_conp/GA 1e-4 sv_SOL on"'
-        config["pair_extra"] = '"sv_SOL on sv_GA on"'
+        config["kspace"] = '"pppm_conp/ME 1e-4 sv_SOL on"'
+        config["pair_extra"] = '"sv_SOL on sv_ME on"'
         result = run.run(config, 13)
         assert np.all(result[0] == result[12])

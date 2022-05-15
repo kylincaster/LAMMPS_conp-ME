@@ -40,7 +40,7 @@ def test_Smat(first, pair, newton):
     config["newton"] = newton
     config["pair"] = pair
     config["Smat"] = "on"
-    config["kspace"] = '"pppm_conp/GA 1e-4"'
+    config["kspace"] = '"pppm_conp/ME 1e-4"'
     result = run.run(config, 16)
     # assert np.all(result[0] == result[15])
 
@@ -54,7 +54,7 @@ class TestINV:
         config["neutral"] = neutral
         config["pair"] = pair
         if pair == "off":
-            config["kspace"] = '"pppm_conp/GA 1e-4"'
+            config["kspace"] = '"pppm_conp/ME 1e-4"'
         config["newton"] = newton
         result = run.run(config, 13)
         assert np.all(result[0] == result[12])
@@ -86,7 +86,7 @@ class TestINV:
         config = config_save.copy()
         config["newton"] = newton
         config["selfGG"] = selfGG
-        config["kspace"] = '"pppm_conp/GA 1e-4 sv_SOL off"'
+        config["kspace"] = '"pppm_conp/ME 1e-4 sv_SOL off"'
         result = run.run(config, 13)
         assert np.all(result[0] == result[12])
 
@@ -100,7 +100,7 @@ class TestINV:
         config = config_save.copy()
         config["newton"] = newton
         config["selfGG"] = selfGG
-        config["kspace"] = '"pppm_conp/GA 1e-4 sv_SOL on"'
+        config["kspace"] = '"pppm_conp/ME 1e-4 sv_SOL on"'
         # config["pair_extra"] = '"sv_SOL on sv_GA on"'
         result = run.run(config, 13)
         assert np.all(result[0] == result[12])
@@ -108,7 +108,7 @@ class TestINV:
     def _test(self):
         config = config_save.copy()
         config["selfGG"] = "on"
-        config["kspace"] = '"pppm_conp/GA 1e-4 sv_SOL on"'
+        config["kspace"] = '"pppm_conp/ME 1e-4 sv_SOL on"'
         result = run.run(config, 13)
         assert np.all(result[0] == result[12])
 
@@ -119,8 +119,8 @@ class TestINV:
         config["mat_name"] = '"a.binmat none"'
         config["newton"] = newton
         config["selfGG"] = selfGG
-        config["kspace"] = '"pppm_la_conp/GA 1e-4 sv_SOL off sv_Xuv on"'
-        config["pair_extra"] = '"sv_SOL on sv_GA on"'
+        config["kspace"] = '"pppm_la_conp/ME 1e-4 sv_SOL off sv_Xuv on"'
+        config["pair_extra"] = '"sv_SOL on sv_ME on"'
         result = run.run(config, 13)
         assert np.all(result[0] == result[12])
 
